@@ -4,6 +4,7 @@
 import arducam_mipicamera as arducam
 import v4l2
 from datetime import datetime
+import os
 
 
 def set_controls(camera):
@@ -14,8 +15,8 @@ def set_controls(camera):
         print(e)
 def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
-    d1 = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-    path = "/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+d1+".jpg"
+    d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    path = os.path.join(os.getcwd(), "Captures", d1+".jpg")
     open(path, "wb")
     frame.as_array.tofile(path)
             #Remove frame from memory
