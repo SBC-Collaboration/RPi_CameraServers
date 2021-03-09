@@ -144,7 +144,7 @@ if (nPatternFound > 1):
     print("Calibrated picture saved as exampleCalibResult.png")
 
     mean_error = 0
-    for i in range(len(objpoints)):  # change to xrange if using python 2
+    for i in xrange(len(objpoints)):  # change to range if using python 3
         imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
         error = cv2.norm(imgpoints[i],imgpoints2, cv2.NORM_L2)/len(imgpoints2)
         mean_error += error

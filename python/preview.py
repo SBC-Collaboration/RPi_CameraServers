@@ -17,7 +17,7 @@ if __name__ == "__main__":
         print("Current resolution is {}".format(fmt))
         print("Start preview...")
         camera.start_preview(fullscreen = False, window = (0, 0, 1280, 720))
-        cont = input("Press e to stop")
+        cont = raw_input("Press e to stop") #change to just 'input' for python3
         if (cont == "e"):
             print("Stop preview...")
             camera.stop_preview()

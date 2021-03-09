@@ -1,12 +1,19 @@
 import v4l2
 import arducam_mipicamera as arducam
 from datetime import datetime
+import os
 
+try:
+    os.mkdir('Captures')
+except FileExistsError:
+    print('Captures directory already exists')
+else:
+    print('Made new directory: Captures')
 
 def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
     d1 = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-    path = "/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+d1+".jpg"
+    path = "Captures/"+d1+".jpg"
     open(path, "wb")
     frame.as_array.tofile(path) 
     del frame  # removes frame from memory
@@ -25,12 +32,13 @@ try:
     print("Current resolution is {}".format(fmt))
     print("Start preview...")
     camera.start_preview(fullscreen=False, window=(0, 0, 1280, 720))
-    usrinput = input("Press ENTER to capture or input 'e' to stop")
+    usrinput = raw_input("Press ENTER to capture or input 'e' to stop")
+        # change 'raw_input' to 'input' for python3
     while True:
         if usrinput == '':
             capture(camera)
             print('Image captured!')
-            usrinput = input("Press ENTER to capture or input 'e' to stop")
+            usrinput = raw_input("Press ENTER to capture or input 'e' to stop")
         elif usrinput == 'e':
             print("Stop preview...")
             camera.stop_preview()
@@ -38,6 +46,6 @@ try:
             camera.close_camera()
         else:
             print('Error: invalid input')
-            usrinput = input("Press ENTER to capture or input 'e' to stop")
+            usrinput = raw_input("Press ENTER to capture or input 'e' to stop")
 except Exception as e:
     print(e)
