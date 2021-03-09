@@ -1,14 +1,6 @@
 import v4l2
 import arducam_mipicamera as arducam
 from datetime import datetime
-import os
-
-try:
-    os.mkdir('Captures')
-except FileExistsError:
-    print('Captures directory already exists')
-else:
-    print('Made new directory: Captures')
 
 def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
