@@ -31,7 +31,7 @@ camera = arducam.mipi_camera()
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(7,GPIO.IN)
 GPIO.setup(8,GPIO.IN)
-GPIO.setup(9,GPIO.OUT,initial-GPIO.LOW)
+GPIO.setup(9,GPIO.OUT,initial=GPIO.LOW)
 GPIO.setup(10,GPIO.OUT,initial=GPIO.LOW)
 
 start_proc = threading.Event()

@@ -14,6 +14,7 @@ import time
 from ctypes import *
 import ctypes
 from count import count_above
+import os
 
 regs = [[0x4F00, 0x01],
         [0x3030, 0x04],
@@ -55,6 +56,7 @@ if __name__ == "__main__":
     t_end=time.time()+1
     frame= camera.capture(encoding="raw")
     frame.buffer_ptr[0].data=bf[0]
+    t_ref = time.time()
     while(time.time()<=t_end):
         try:
             if(i==100):
@@ -99,11 +101,12 @@ if __name__ == "__main__":
                 i+=1
         except KeyboardInterrupt:
             break
+    print("Total time: %.5fs"%(time.time()-t_ref))
     camera.close_camera()
     for i in range(100):
         im = Image.fromarray(ls[i])
         im = im.convert("L")
-        im.save("/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+str(i)+".png")
+        im.save(os.path.join(os.getcwd(), "Captures","Buffer-"+"{:02}".format(i)+".png"))
     print("images saved")
 
 
