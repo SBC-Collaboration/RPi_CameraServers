@@ -20,6 +20,7 @@ import time
 #import ray
 import threading
 import json
+import os
 #ray.init()
 
 i=0
@@ -138,6 +139,6 @@ if __name__=="__main__":
         for i in range(100):
             im = Image.fromarray(ls[i])
             im = im.convert("L")
-            im.save("/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+str(i)+".png")
+            im.save(os.path.join(os.getcwd(), "Captures","Buffer-"+"{:02}".format(i)+".png"))
         print("images saved")
         GPIO.output(10,0)

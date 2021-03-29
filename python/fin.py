@@ -13,6 +13,7 @@ import time
 #import RPi.GPIO as GPIO
 import ctypes
 from count import count_above
+import os
 
 regs = [[0x4F00, 0x01],
         [0x3030, 0x04],
@@ -86,5 +87,5 @@ if __name__=="__main__":
     for i in range(100):
         im = Image.fromarray(ls[i])
         im = im.convert("L")
-        im.save("/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+str(i)+".png")
+        im.save(os.path.join(os.getcwd(), "Captures","Buffer-"+"{:02}".format(i)+".png"))
         print("images saved")

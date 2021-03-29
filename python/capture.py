@@ -6,13 +6,13 @@ import v4l2
 from datetime import datetime
 import os
 
-
 def set_controls(camera):
     try:
         print("Enable Auto Exposure...")
         camera.software_auto_exposure(enable = True)
     except Exception as e:
         print(e)
+
 def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
     d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
@@ -21,7 +21,6 @@ def capture(camera):
     frame.as_array.tofile(path)
             #Remove frame from memory
     del frame
-    
             
 if __name__ == "__main__":
         try:

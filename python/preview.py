@@ -2,8 +2,6 @@ import arducam_mipicamera as arducam
 import v4l2 #sudo pip install v4l2
 import time
 
-
-
 if __name__ == "__main__":
     try:
         camera = arducam.mipi_camera()
@@ -17,7 +15,7 @@ if __name__ == "__main__":
         print("Current resolution is {}".format(fmt))
         print("Start preview...")
         camera.start_preview(fullscreen = False, window = (0, 0, 1280, 720))
-        cont = raw_input("Press e to stop") #change to just 'input' for python3
+        cont = input("Press e to stop") #change to 'raw_input' for python2
         if (cont == "e"):
             print("Stop preview...")
             camera.stop_preview()
