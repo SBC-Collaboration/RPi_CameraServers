@@ -19,12 +19,14 @@ import os
 import json
 from multiprocessing import Process
 import threading
+camera_lib = ct.cdll.LoadLibrary("libarducam_mipicamera.so")
 
 class CaptureCore:
     def __init__(self):
         self.config_path = "config.json"
         self.load_config(self.config_path)
         self.init_camera()
+        self.init_gpio()
         self.init_threading()
         
     def load_config(self, config_path):
@@ -34,21 +36,27 @@ class CaptureCore:
         for k in self.config.keys():
             print("{:<15s} {:<10s}".format(k+":",repr(self.config[k])))
     
+    def init_gpio(self):
+        # using bcm mode ("GPIO #" number, not physical pin number)
+        GPIO.setmode(GPIO.BCM)
+        input_pins = self.config["input_pins"]
+        GPIO.setup(input_pins["state_com"],GPIO.IN)
+        
+    
     def init_camera(self):
         self.camera = arducam.mipi_camera()
         self.camera.init_camera()
         
         print("Camera open")
+#        if self.config["frame_sync"]:
+#            regs = self.config["registers"]
+#            for reg in regs:
+#                self.camera.write_sensor_reg(reg[0],reg[1])
         self.camera.set_resolution(*self.config["resolution"])
-        self.camera.set_mode(5)
+        self.camera.set_mode(11)
         self.camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         self.camera.set_control(v4l2.V4L2_CID_HFLIP,1)
-        #self.camera.software_auto_exposure(enable = True)
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        if self.config["frame_sync"]:
-            regs = self.config["registers"]
-            for i in range(7):
-                self.camera.write_sensor_reg(regs[i][0],regs[i][1])
         print("Camera set")
 
     def init_threading(self):
@@ -66,9 +74,9 @@ class CaptureCore:
         del frame
     
     def continuous_capture(self, t=1):
-        bu = (ct.c_ubyte*1024000) * 100 
+        bu = (ct.c_ubyte*1024000) * 100
         self.buffer = bu()
-        frame = self.camera.capture(encoding="raw")
+        frame = self.camera.capture(encoding="raw", quality=90)
         frame.buffer_ptr[0].data = self.buffer[0]
         t_overall = time.time()
         t_start = time.time()
@@ -76,6 +84,9 @@ class CaptureCore:
         i = 0
         capture_time = []
         save_time = []
+        
+        image_format = arducam.IMAGE_FORMAT(arducam.image_encodings["raw"], 50)
+        
         try:
             while (time.time()<t_end):
                 if i==100: 
@@ -86,16 +97,12 @@ class CaptureCore:
                     capture_time = []
                     t_overall = time.time()
                 else: 
-                    #print("Capture {:2d}: ".format(i), end="")
                     t_start=time.time()
                     frame = self.camera.capture(encoding="raw")
-                    capture_time.append(time.time()-t_start)
-                    #print("%.5fs"%(time.time()-t_start), end=" ")
                     t_start = time.time()
                     self.buffer[i] = ct.cast(frame.buffer_ptr[0].data, ct.POINTER(ct.c_ubyte*1024000)).contents
                     save_time.append(time.time()-t_start)
-                    #print("%.5fs"%(time.time()-t_start))
-                    del frame
+                    #del frame
                     i+=1
         except KeyboardInterrupt:
                 print('Interrupted')
@@ -114,7 +121,7 @@ class CaptureCore:
         self.camera.close_camera()
         print("Camera closed. Saving images . . .")
         
-        for i in range(self.config["max_frames"]//10):
+        for i in range(self.config["max_frames"]//5):
             im = Image.fromarray(np.reshape(self.buffer[i],
                                             tuple(np.array(self.config["resolution"][::-1]))))
             im = im.convert("L")

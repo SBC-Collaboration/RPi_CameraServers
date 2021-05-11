@@ -4,7 +4,7 @@ from datetime import datetime
 
 def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
-    d1 = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
+    d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     path = "Captures/"+d1+".jpg"
     open(path, "wb")
     frame.as_array.tofile(path) 

@@ -19,7 +19,6 @@ def FOURCC(a, b, c, d):
 IMAGE_ENCODING_I420 = FOURCC('I', '4', '2', '0')
 IMAGE_ENCODING_JPEG = FOURCC('J', 'P', 'E', 'G')
 IMAGE_ENCODING_RAW_BAYER = FOURCC('R', 'A', 'W', ' ')
-IMAGE_ENCODING_PNG = FOURCC("P","N","G"," ")
 
 VIDEO_ENCODING_H264 = FOURCC('H', '2', '6', '4')
 
@@ -27,7 +26,6 @@ image_encodings = {
     'i420' : IMAGE_ENCODING_I420,
     'jpeg' : IMAGE_ENCODING_JPEG,
     'raw' : IMAGE_ENCODING_RAW_BAYER,
-    "png": IMAGE_ENCODING_PNG
 }
 video_encodings = {
     'h264' : VIDEO_ENCODING_H264,
@@ -344,7 +342,6 @@ class mipi_camera(object):
         )
         return _width.value, _height.value
 
-    # use mode 5 
     def set_mode(self, mode):
         check_status(
             arducam_set_mode(self.camera_instance, mode),
@@ -384,8 +381,6 @@ class mipi_camera(object):
             raise TypeError("Unknown image encoding type.")
         image_format = IMAGE_FORMAT(image_encodings[encoding], quality)
         return buffer(arducam_capture(self.camera_instance, byref(image_format), time_out))
-        
-    
 
     def set_raw_callback(self, func = None, userdata = None):
         '''
@@ -542,7 +537,7 @@ def unpack_mipi_raw10(byte_buf):
 
 def remove_padding(data, width, height, bit_width):
     buff = np.frombuffer(data, np.uint8)
-    real_width = width / 8 * bit_width
+    real_width = width // 8 * bit_width
     align_width = align_up(real_width, 32)
     align_height = align_up(height, 16)
     

@@ -203,7 +203,7 @@ if __name__ == "__main__":
             for i in range(max_frames):
                 im = Image.fromarray(ls[i])
                 im = im.convert("L")
-                im.save("/home/pi/SBCcode/DAQ/Cameras/RPi_CameraServers/python/Captures/"+str(i)+".png")
+                im.save("Captures/"+str(i)+".png")
                 print("images saved")
         print("camera close")
     except KeyboardInterrupt:
