@@ -4,7 +4,7 @@ config_path = "config.json"
 
 config = {}
 config["adc_threshold"] = 10
-config["exposure"] = 100
+config["exposure"] = 250
 config["pix_threshold"] = 199 #15
 config["max_frames"] = 100
 config["frames_after"] = 50
@@ -19,15 +19,9 @@ config["input_pins"] = {"state_com": 5,
 config["output_pins"] = {"state": 23,
                          "trig": 24}
 config["frame_sync"] = True
-config["registers"] = [[0x4F00, 0x01],
-                       [0x3030, 0x04],
-                       [0x303F, 0x01],
-                       [0x302C, 0x00],
-                       [0x302F, 0x7F],
-                       [0x3823, 0x30],
-                       [0x0100, 0x00]]
-#                       [0x3006, 0x00],
-#                       [0x3823, 0x30]]
+config["mode"] = 11
+# mode: 11, width: 1280, height: 800, pixelformat: GREY, desc: Used for ov9281 2lanes raw8 1280x800 external trigger mode
+# mode: 5, width: 1280, height: 800, pixelformat: GREY, desc: Used for ov9281 2lans raw8
 
 def save_config(config_path):
     with open(config_path, "w") as f:

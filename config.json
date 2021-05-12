@@ -1,6 +1,6 @@
 {
   "adc_threshold": 10,
-  "exposure": 100,
+  "exposure": 250,
   "pix_threshold": 199,
   "max_frames": 100,
   "frames_after": 50,
@@ -21,35 +21,5 @@
     "state": 23,
     "trig": 24
   },
-  "frame_sync": true,
-  "registers": [
-    [
-      20224,
-      1
-    ],
-    [
-      12336,
-      4
-    ],
-    [
-      12351,
-      1
-    ],
-    [
-      12332,
-      0
-    ],
-    [
-      12335,
-      127
-    ],
-    [
-      14371,
-      48
-    ],
-    [
-      256,
-      0
-    ]
-  ]
+  "frame_sync": true
 }
