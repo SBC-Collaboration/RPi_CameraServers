@@ -31,11 +31,12 @@ class CaptureCore:
         self.init_threading()
         
     def load_config(self, config_path):
-        print("Loading config")
+        print("Loading config . . .")
         with open(config_path) as f:
             self.config = json.load(f)
         for k in self.config.keys():
             print("{:<15s} {:<10s}".format(k+":",repr(self.config[k])))
+        print("")
         # size of each frame in buffer
         self.frame_size = np.product(self.config["resolution"])
         self.res = self.config["resolution"]
@@ -51,14 +52,14 @@ class CaptureCore:
         self.camera = arducam.mipi_camera()
         self.camera.init_camera()
         
-        print("Camera open")
+        print("Camera open.")
         self.camera.set_resolution(*self.res)
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
         self.camera.set_mode(self.config["mode"])
         self.camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         self.camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        print("Camera set")
+        print("Camera set.\n")
 
     def init_threading(self):
         start_proc = threading.Event()
@@ -126,7 +127,7 @@ class CaptureCore:
                     print("FPS: {:3.1f}".format(self.config["max_frames"]/(time.time()-t_overall)))
                     t_overall = time.time()
         except KeyboardInterrupt:
-                print('Interrupted')
+                print('Interrupted\n')
         
         self.take_remaining_images(i)
         self.camera.close_camera()
