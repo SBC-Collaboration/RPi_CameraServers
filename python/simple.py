@@ -99,7 +99,7 @@ if __name__=="__main__":
         start_cap.wait()
         start_cap.clear()
         print("Loading settings")
-        with open("config.JSON") as config_file:
+        with open("config.json") as config_file:
             data = json.load(config_file)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,data["exposure"])
         adc_threshold1 = data["adc_threshold"]
@@ -139,6 +139,6 @@ if __name__=="__main__":
         for i in range(100):
             im = Image.fromarray(ls[i])
             im = im.convert("L")
-            im.save(os.path.join(os.getcwd(), "Captures","Buffer-"+"{:02}".format(i)+".png"))
+            im.save("./Captures/Buffer-"+"{:02}".format(i)+".png")
         print("images saved")
         GPIO.output(10,0)

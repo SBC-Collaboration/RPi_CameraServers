@@ -24,13 +24,13 @@ try:
     print("Current resolution is {}".format(fmt))
     print("Start preview...")
     camera.start_preview(fullscreen=False, window=(0, 0, 1280, 720))
-    usrinput = raw_input("Press ENTER to capture or input 'e' to stop")
-        # change 'raw_input' to 'input' for python3
+    usrinput = input("Press ENTER to capture or input 'e' to stop")
+        # change 'input' to 'raw_input' for python3
     while True:
         if usrinput == '':
             capture(camera)
             print('Image captured!')
-            usrinput = raw_input("Press ENTER to capture or input 'e' to stop")
+            usrinput = input("Press ENTER to capture or input 'e' to stop")
         elif usrinput == 'e':
             print("Stop preview...")
             camera.stop_preview()
