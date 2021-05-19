@@ -11,7 +11,7 @@ The `config.json` file contains necessary configurations for the camera to opera
 - **resolution** (`list`): The resolution of each frame. The default resolution is 1280x800.
 - **frame_sync** (`bool`): Whether FSIN is enabled.
 - **mode** (`int`): The mode the camera should be operated in. Choose mode 11 when frame sync is on, and mode 5 when frame sync is off.
-- **max_frames** (`int`): The max number of frames that can be stored in the ring buffer at once. After this number is reached, the oldest frames will be lost.
+- **buffer_len** (`int`): The number of frames that can be stored in the ring buffer at once. After this number is reached, the oldest frames will be lost.
 - **frames_after** (`int`): The number of frames to be taken after the camera receives a trigger to end the event. 
 - **adc_threshold** (`int`): The value that a pixel needs to change from previous frame to be recorded as significant.
 - **pix_threshold** (`int`): The number of pixels that need to be different from previous frame to trigger.

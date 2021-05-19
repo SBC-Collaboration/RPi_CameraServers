@@ -39,7 +39,7 @@ start_proc = threading.Event()
 next_frame = threading.Event()
 start_cap = threading.Event()
 
-counter =0
+counter=0
 loop=0
 
 def wait_sig():

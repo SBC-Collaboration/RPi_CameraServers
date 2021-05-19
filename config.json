@@ -1,13 +1,13 @@
 {
   "exposure": 250,
-  "max_frames": 100,
-  "frames_after": 50,
-  "frame_sync": true,
-  "mode": 11,
   "resolution": [
     1280,
     800
   ],
+  "frame_sync": true,
+  "mode": 11,
+  "buffer_len": 100,
+  "frames_after": 50,
   "adc_threshold": 10,
   "pix_threshold": 199,
   "save_path": "./Captures/",
