@@ -1,6 +1,6 @@
 import json
 
-config_path = "config.json"
+config_path = "../config.json"
 
 config = {}
 config["exposure"] = 250

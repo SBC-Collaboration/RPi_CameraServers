@@ -15,11 +15,10 @@ from PIL import Image
 import time
 import RPi.GPIO as GPIO
 import ctypes as ct
-from python.count import count_above
+import python.count as count
 import os
 import json
-from multiprocessing import Process
-import threading
+import multiprocessing as mp
 camera_lib = ct.cdll.LoadLibrary("libarducam_mipicamera.so")
 
 class CaptureCore:
@@ -28,7 +27,7 @@ class CaptureCore:
         self.load_config(self.config_path)
         self.init_camera()
         self.init_gpio()
-        self.init_threading()
+        self.init_multiprocessing()
         
     def load_config(self, config_path):
         print("Loading config . . .")
@@ -67,10 +66,13 @@ class CaptureCore:
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
         print("Camera set.\n")
 
-    def init_threading(self):
-        start_proc = threading.Event()
-        next_frame = threading.Event()
-        start_cap = threading.Event()
+    def init_multiprocessing(self):
+        self.manager = mp.Manager()
+        self.lock = mp.Lock()
+        i = mp.Value("i", 0)
+        self.capture_process = mp.Process(target=self.capture_frame, args=(i, self.lock))
+        self.diff_process = mp.Process(target=self.frame_diff, args=(i, self.lock))
+        self.next_frame = mp.Barrier(2)
 
     def capture(self):
         # capture single image
@@ -82,18 +84,18 @@ class CaptureCore:
         #Remove frame from memory
         del frame
 
-    def capture_frame(self, i):
+    def capture_frame(self, i, lock):
         # capture a frame in continuous capture
         frame = self.camera.capture(encoding="raw", quality = 90)
         self.timestamps[i] = time.time()
-        self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-        return (i+1) % self.buffer_len
+        with lock:
+            self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
 
     def take_remaining_images(self, i):
         for j in range(self.config["frames_after"]):
             frame = self.camera.capture(encoding="raw")
             self.timestamps[i] = time.time()
-            self.buffer[i] = ct.cast(frame.buffer_ptr[0].data, ct.POINTER(ct.c_ubyte*self.frame_size)).contents
+            self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
             i = (i+1) % self.buffer_len
         
         print("\nRemaining frames taken.")
@@ -101,13 +103,15 @@ class CaptureCore:
         self.buffer = np.roll(self.buffer, -i, axis=0)
         self.timestamps = np.roll(self.timestamps, -i)
 
-    def process(self, i):
-        np.subtract(self.buffer[i-1],self.buffer[i-2],out=self.diff_buffer)
-        counter = count_above(self.diff_buffer, self.config["adc_threshold"])
-        print("counter:  ",counter, end="\t")
+    def frame_diff(self, i, lock):
+        with lock:
+            frame1 = self.buffer[i-1]
+            frame2 = self.buffer[i]
+        np.subtract(frame1, frame2,out=self.diff_buffer)
+        counter = count.diff_count(frame1, frame2, self.config["adc_threshold"])
         if counter>self.config["pix_threshold"] and GPIO.input(self.input_pins["trig_en"]):
             GPIO.output(self.output_pins["trig"],1)
-            print("Detected motion. Trigger sent.")
+            print("Detected motion: %d. Trigger sent."%counter)
 
     def save_images(self):
         t_overall = time.time()
@@ -137,8 +141,9 @@ class CaptureCore:
                     break
                 
                 # take a frame
-                i = self.capture_frame(i)
-                #self.process(i)
+                self.capture_frame(i, self.lock)
+                self.frame_diff(i, self.lock)
+                i = (i+1) % self.buffer_len
                 
                 # print FPS every time buffer is filled
                 if i==0:
