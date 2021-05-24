@@ -13,7 +13,7 @@ import sys
 import numpy as np
 from PIL import Image
 import time
-import RPi.GPIO as GPIO
+import pigpio as pg
 import ctypes as ct
 import python.count as count
 import os
@@ -42,16 +42,17 @@ class CaptureCore:
         self.buffer_len = self.config["buffer_len"]
     
     def init_gpio(self):
-        # using bcm mode ("GPIO #" number, not physical pin number)
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
+        # using BCM numbering: "GPIO #" number, not physical pin number
         self.input_pins = self.config["input_pins"]
-        GPIO.setup(self.input_pins["state_com"],GPIO.IN)
-        GPIO.setup(self.input_pins["trig_en"],GPIO.IN)
-        GPIO.setup(self.input_pins["trig_latch"],GPIO.IN)
         self.output_pins = self.config["output_pins"]
-        GPIO.setup(self.output_pins["state"],GPIO.OUT)
-        GPIO.setup(self.output_pins["trig"],GPIO.OUT)
+        # start daemon by pigpiod or
+        # sudo systemctl enable pigpiod.service
+        self.gpio = pg.pi()
+        self.gpio.set_mode(self.input_pins["state_com"],pg.INPUT)
+        self.gpio.set_mode(self.input_pins["trig_en"],pg.INPUT)
+        self.gpio.set_mode(self.input_pins["trig_latch"],pg.INPUT)
+        self.gpio.set_mode(self.output_pins["state"],pg.OUTPUT)
+        self.gpio.set_mode(self.output_pins["trig"],pg.OUTPUT)
     
     def init_camera(self):
         self.camera = arducam.mipi_camera()
@@ -71,8 +72,8 @@ class CaptureCore:
         self.lock = mp.Lock()
         i = mp.Value("i", 0)
         self.capture_process = mp.Process(target=self.capture_frame, args=(i, self.lock))
-        self.diff_process = mp.Process(target=self.frame_diff, args=(i, self.lock))
-        self.next_frame = mp.Barrier(2)
+        self.detection_process = mp.Process(target=self.detect_motion, args=(i, self.lock))
+        self.next_frame = mp.Event()
 
     def capture(self):
         # capture single image
@@ -88,6 +89,8 @@ class CaptureCore:
         # capture a frame in continuous capture
         frame = self.camera.capture(encoding="raw", quality = 90)
         self.timestamps[i] = time.time()
+        # presentaion timestamp
+        # pts = frame.buffer_ptr[0].pts
         with lock:
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
 
@@ -103,21 +106,23 @@ class CaptureCore:
         self.buffer = np.roll(self.buffer, -i, axis=0)
         self.timestamps = np.roll(self.timestamps, -i)
 
-    def frame_diff(self, i, lock):
+    def detect_motion(self, i, lock):
         with lock:
             frame1 = self.buffer[i-1]
             frame2 = self.buffer[i]
-        np.subtract(frame1, frame2,out=self.diff_buffer)
+        # cython code for subtracting frames and count pixels above threshold
         counter = count.diff_count(frame1, frame2, self.config["adc_threshold"])
-        if counter>self.config["pix_threshold"] and GPIO.input(self.input_pins["trig_en"]):
-            GPIO.output(self.output_pins["trig"],1)
-            print("Detected motion: %d. Trigger sent."%counter)
+        if counter>self.config["pix_threshold"] and self.gpio.read(self.input_pins["trig_en"]):
+            # send out a pulse of 1 us
+            self.gpio.gpio_trigger(self.output_pins["trig"],1,1)
+            print("Detected motion: %d.\t Trigger sent."%counter)
 
     def save_images(self):
         t_overall = time.time()
+        # save timestamps of images
         np.savetxt(self.config["save_path"]+"timestamps.csv", self.timestamps, fmt="%.9f")
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
-        
+
         for i in range(self.buffer_len):
             im = Image.fromarray(self.buffer[i]).convert("L")
             im.save(self.config["save_path"]+"Buffer-"+"{:02}".format(i)+self.config["image_format"])
@@ -126,7 +131,6 @@ class CaptureCore:
     def start_event(self, t=1):
         # initialize buffer
         self.buffer = np.zeros((self.buffer_len, *self.res),dtype=np.uint8)
-        self.diff_buffer = np.zeros(self.res, dtype=np.uint8)
         self.timestamps = np.zeros(100)
         
         t_end = time.time() + t
@@ -135,14 +139,14 @@ class CaptureCore:
         
         try:
             while (time.time()<t_end):
-                if GPIO.input(self.input_pins["trig_latch"]):
+                if self.gpio.read(self.input_pins["trig_latch"]):
                     # quit loop when trigger is latched
                     print("Trigger latched.")
                     break
                 
                 # take a frame
                 self.capture_frame(i, self.lock)
-                self.frame_diff(i, self.lock)
+                self.detect_motion(i, self.lock)
                 i = (i+1) % self.buffer_len
                 
                 # print FPS every time buffer is filled
