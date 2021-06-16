@@ -5,6 +5,17 @@ This is the driver for camera setup for SBC Collaboration. It is hosted at [http
 ## Instruction
 The `imdaq.py` file is the main capture core of the camera. It will first load the configuration settings from will and set the camera with the appropriate settings. Then it will continuously capture frame using frame sync and save to a ring buffer. When interrupted, it will take remaining frames and save all frames in buffer to disk.
 
+## Setup
+To successfully establish connection with the camera, and to make sure the image acquisition works properly, please follow the steps below to setup the environment on the Raspberry Pi. The instructions are based on the procedure [here](https://github.com/ArduCAM/MIPI_Camera/tree/master/RPI).
+- Install python packages: `v4l2`, `multiprocessing`, `cython` and `pigpio`.
+- Enable Camera and I2C in raspberry pi setting: run `sudo raspi-config` in the terminal, and then select `Interface Options`.
+- Install SDK library by running the following commands in the terminal in order:
+  `cd MIPI_Camera/RPI/`
+  `make install`
+  `chmod +x enable_i2c_vc.sh `
+  `./enable_i2c_vc.sh`
+- Enable `pigpio` daemon by running `sudo systemctl enable pigpiod` in the terminal.
+
 ## Configurations
 The `config.json` file contains necessary configurations for the camera to operate. It can be edited directly or through `configure.py` script. Below are the options:
 - **exposure** (`int`): Length of exposure for each frame. Empirically, each unit is about 7.7us.
@@ -27,4 +38,4 @@ The `config.json` file contains necessary configurations for the camera to opera
   - **trig** (`int`): The trigger that RPi generates that it sends to the Trigger FIFO.
 
 ## Dependency
-This repository requires [MIPI_Camera](https://github.com/ArduCAM/MIPI_Camera) driver provided by Arducam. A version is already included. To save space, please only copy `RPI` folder into the `MIPI_Camera` folder.
+This repository requires [MIPI_Camera](https://github.com/ArduCAM/MIPI_Camera) driver provided by Arducam. A version is already included. To save space, when updating the driver, please only copy `RPI` folder into the `MIPI_Camera` folder.
