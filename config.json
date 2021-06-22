@@ -1,5 +1,5 @@
 {
-  "exposure": 250,
+  "exposure": 300,
   "resolution": [
     1280,
     800
@@ -9,8 +9,8 @@
   "buffer_len": 100,
   "frames_after": 50,
   "adc_threshold": 10,
-  "pix_threshold": 199,
-  "save_path": "./Captures/",
+  "pix_threshold": 300,
+  "save_path": "/mnt/event-builder/Images/",
   "image_format": ".png",
   "date_format": "%Y-%m-%d_%H:%M:%S",
   "input_pins": {

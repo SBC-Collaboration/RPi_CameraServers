@@ -13,7 +13,7 @@ import sys
 import numpy as np
 from PIL import Image
 import time
-import pigpio as pg
+import RPi.GPIO as GPIO
 import ctypes as ct
 import python.count as count
 import os
@@ -41,17 +41,16 @@ class CaptureCore:
         self.buffer_len = self.config["buffer_len"]
 
     def init_gpio(self):
-        # using BCM numbering: "GPIO #" number, not physical pin number
+        # using bcm mode ("GPIO #" number, not physical pin number)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
         self.input_pins = self.config["input_pins"]
+        GPIO.setup(self.input_pins["state_com"],GPIO.IN)
+        GPIO.setup(self.input_pins["trig_en"],GPIO.IN)
+        GPIO.setup(self.input_pins["trig_latch"],GPIO.IN)
         self.output_pins = self.config["output_pins"]
-        # start daemon by pigpiod or
-        # sudo systemctl enable pigpiod.service
-        self.gpio = pg.pi()
-        self.gpio.set_mode(self.input_pins["state_com"],pg.INPUT)
-        self.gpio.set_mode(self.input_pins["trig_en"],pg.INPUT)
-        self.gpio.set_mode(self.input_pins["trig_latch"],pg.INPUT)
-        self.gpio.set_mode(self.output_pins["state"],pg.OUTPUT)
-        self.gpio.set_mode(self.output_pins["trig"],pg.OUTPUT)
+        GPIO.setup(self.output_pins["state"],GPIO.OUT)
+        GPIO.setup(self.output_pins["trig"],GPIO.OUT)
 
     def init_camera(self):
         self.camera = arducam.mipi_camera()
@@ -94,7 +93,6 @@ class CaptureCore:
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,config["exposure"])
         print("Camera set.")
-        print(camera)
 
         while True:
             i = ind.value
@@ -115,7 +113,7 @@ class CaptureCore:
                 print("FPS: {:3.2f}".format(self.buffer_len/(time.time()-t_overall)))
                 t_overall = time.time()
 
-    def detect_motion(self, ind, buffer, config, gpio, frame_taken, buffer_copied):
+    def detect_motion(self, ind, buffer, config, frame_taken, buffer_copied):
         size = np.product(config["resolution"])
         frame1 = np.zeros(config["resolution"], dtype=np.uint8)
         frame2 = np.zeros(config["resolution"], dtype=np.uint8)
@@ -134,10 +132,12 @@ class CaptureCore:
             t = time.time()
             counter = count.diff_count(frame1, frame2, config["adc_threshold"])
             #print(time.time()-t)
-            if counter>config["pix_threshold"] and gpio.read(config["input_pins"]["trig_en"]):
+            if counter>config["pix_threshold"] and GPIO.input(config["input_pins"]["trig_en"]):
                 # send out a pulse of 1 us
-                gpio.gpio_trigger(config["output_pins"]["trig"],1,1)
-                print("Detected motion: %d.\t Trigger sent."%counter)
+                GPIO.output(config["output_pins"]["trig"],GPIO.HIGH)
+                time.sleep(0.001)
+                GPIO.output(config["output_pins"]["trig"],GPIO.LOW)
+                #print("Detected motion: %d.\t Trigger sent."%counter)
 
     def take_remaining_images(self, i):
         for j in range(self.config["frames_after"]):
@@ -183,14 +183,14 @@ class CaptureCore:
             self.capture_process = mp.Process(target=self.capture_frame, 
                 args=(self.ind, self.buffer, self.timestamps, self.config, self.frame_taken, self.buffer_copied))
             self.detection_process = mp.Process(target=self.detect_motion, 
-                args=(self.ind, self.buffer, self.config, self.gpio, self.frame_taken, self.buffer_copied))
+                args=(self.ind, self.buffer, self.config, self.frame_taken, self.buffer_copied))
             
             # take a frame
             self.capture_process.start()
             self.detection_process.start()
             print("Processes started.\n")
             while time.time()-t_overall<t:
-                if self.gpio.read(self.input_pins["trig_latch"]):
+                if GPIO.input(self.input_pins["trig_latch"]):
                     # quit loop when trigger is latched
                     #print("Trigger latched.")
                     pass
@@ -210,4 +210,4 @@ class CaptureCore:
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event(t=120)
+    c.start_event(t=1200)
