@@ -11,6 +11,7 @@
   "adc_threshold": 10,
   "pix_threshold": 300,
   "save_path": "/mnt/event-builder/Images/",
+  "cam_name": "cam0",
   "image_format": ".png",
   "date_format": "%Y-%m-%d_%H:%M:%S",
   "input_pins": {

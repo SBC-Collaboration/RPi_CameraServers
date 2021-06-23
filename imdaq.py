@@ -79,9 +79,7 @@ class CaptureCore:
         del frame
 
     def capture_frame(self, ind, buffer, timestamps, config, frame_taken, buffer_copied):
-        t_overall = time.time()
         size = np.product(config["resolution"])
-
         camera = arducam.mipi_camera()
         camera.init_camera()
         
@@ -93,6 +91,8 @@ class CaptureCore:
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,config["exposure"])
         print("Camera set.")
+
+        t_overall = time.time()
 
         while True:
             i = ind.value
@@ -114,7 +114,6 @@ class CaptureCore:
                 t_overall = time.time()
 
     def detect_motion(self, ind, buffer, config, frame_taken, buffer_copied):
-        size = np.product(config["resolution"])
         frame1 = np.zeros(config["resolution"], dtype=np.uint8)
         frame2 = np.zeros(config["resolution"], dtype=np.uint8)
         buffer_copied.set()
@@ -125,17 +124,16 @@ class CaptureCore:
             i = ind.value
             np.copyto(frame1, buffer[i-1])
             np.copyto(frame2, buffer[i])
-
-            #frame2 = np.array(buffer[i], dtype=np.uint8)
             buffer_copied.set()
+
             # cython code for subtracting frames and count pixels above threshold
             t = time.time()
             counter = count.diff_count(frame1, frame2, config["adc_threshold"])
             #print(time.time()-t)
             if counter>config["pix_threshold"] and GPIO.input(config["input_pins"]["trig_en"]):
-                # send out a pulse of 1 us
+                # send out a pulse of 100 us
                 GPIO.output(config["output_pins"]["trig"],GPIO.HIGH)
-                time.sleep(0.001)
+                time.sleep(0.0001)
                 GPIO.output(config["output_pins"]["trig"],GPIO.LOW)
                 #print("Detected motion: %d.\t Trigger sent."%counter)
 
@@ -151,49 +149,65 @@ class CaptureCore:
         self.buffer = np.roll(self.buffer, -i, axis=0)
         self.timestamps = np.roll(self.timestamps, -i)
 
+    def save_frame(self, i):
+        im = Image.fromarray(self.buffer[i]).convert("L")
+        filename = self.config["save_path"]+self.config["cam_name"]+"-img{:02}".format(i)+self.config["image_format"]
+        im.save(filename)
+
     def save_images(self):
         t_overall = time.time()
         # save timestamps of images
-        np.savetxt(self.config["save_path"]+"timestamps.csv", self.timestamps, fmt="%.9f")
+        np.savetxt(self.config["save_path"]+self.config["cam_name"]+"_timestamps.csv", self.timestamps, fmt="%.9f")
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
 
-        for i in range(self.buffer_len):
-            im = Image.fromarray(self.buffer[i]).convert("L")
-            im.save(self.config["save_path"]+"Buffer-"+"{:02}".format(i)+self.config["image_format"])
+        from multiprocessing.pool import ThreadPool
+        import functools
+        from pathos.multiprocessing import Pool
+        # ns = self.manager.Namespace()
+        # ns.buf = self.buffer
+        # ns.conf = self.config
+        pool = ThreadPool(4)
+        pool.map(self.save_frame, range(self.buffer_len))
+
         print("Images saved. Time: %.0fs"%(time.time()-t_overall))
 
-    def start_event(self, t=1):
+    def start_event(self, t=10):
+        print("Waiting for state_com. . . ")
+        while not GPIO.input(self.input_pins["state_com"]):
+            time.sleep(0.001)
+
         # initialize buffer
-        #self.buffer = np.zeros((self.buffer_len, *self.res),dtype=np.uint8)
         self.timestamps = np.zeros(100)
         size = np.product(self.config["resolution"])
+        self.ind = mp.Value("i", 0)
+        arr = mp.RawArray(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1])
+        self.buffer = np.frombuffer(arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
+        print("Buffer initialized.")
 
-        t_end = time.time() + t
+        #self.manager = mp.Manager()
+        #ns = self.manager.Namespace()
+        #ns.camera = self.camera
+        self.frame_taken = mp.Event()
+        self.buffer_copied = mp.Event()
+        self.capture_process = mp.Process(target=self.capture_frame, 
+            args=(self.ind, self.buffer, self.timestamps, self.config, self.frame_taken, self.buffer_copied))
+        self.detection_process = mp.Process(target=self.detect_motion, 
+            args=(self.ind, self.buffer, self.config, self.frame_taken, self.buffer_copied))
+        print("Multiprocessing initialized.")
+
         t_overall = time.time()
+        GPIO.output(self.output_pins["state"], GPIO.HIGH)
 
-        try:
-            self.ind = mp.Value("i", 0)
-            #self.buffer = mp.Array(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1], lock=False)
-            arr = mp.RawArray(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1])
-            self.buffer = np.frombuffer(arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
-            print("buffer init")
-
-            self.frame_taken = mp.Event()
-            self.buffer_copied = mp.Event()
-            self.capture_process = mp.Process(target=self.capture_frame, 
-                args=(self.ind, self.buffer, self.timestamps, self.config, self.frame_taken, self.buffer_copied))
-            self.detection_process = mp.Process(target=self.detect_motion, 
-                args=(self.ind, self.buffer, self.config, self.frame_taken, self.buffer_copied))
-            
+        try:            
             # take a frame
             self.capture_process.start()
             self.detection_process.start()
             print("Processes started.\n")
             while time.time()-t_overall<t:
                 if GPIO.input(self.input_pins["trig_latch"]):
-                    # quit loop when trigger is latched
-                    #print("Trigger latched.")
-                    pass
+                    print("Trigger latched.")
+                    break
+                time.sleep(0.001)
 
         except KeyboardInterrupt:
                 print('Interrupted.')
@@ -207,7 +221,8 @@ class CaptureCore:
         #camera.close_camera()
         print("Camera closed. Saving images . . .")
         self.save_images()
+        GPIO.output(self.output_pins["state"], GPIO.LOW)
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event(t=1200)
+    c.start_event(t=2)
