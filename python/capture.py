@@ -17,6 +17,7 @@ def capture(camera):
     frame = camera.capture(encoding = 'jpeg')
     d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     path = os.path.join(os.getcwd(), "Captures", d1+".jpg")
+    path = "/home/pi/RPi_CameraServers/Captures/"+d1+".bmp"
     open(path, "wb")
     frame.as_array.tofile(path)
             #Remove frame from memory
