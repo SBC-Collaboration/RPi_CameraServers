@@ -20,6 +20,7 @@ import os
 import json
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
+import pandas as pd
 
 # set to lowest niceness for highest priority
 pid = os.getpid()
@@ -31,8 +32,8 @@ class CaptureCore:
         self.load_config(self.config_path)
         # self.init_camera()
         self.init_gpio()
-        self.init_buffer()
-        self.init_multiprocessing()
+        #self.init_buffer()
+        #self.init_multiprocessing()
 
     def load_config(self, config_path):
         print("Loading config . . .")
@@ -62,7 +63,12 @@ class CaptureCore:
 
     def init_buffer(self):
         # initialize buffer
-        self.timestamps = mp.Array("d", np.zeros(100))
+        #self.caminfo = np.array([(0.0, 0, 0, 0, 0) for i in range(self.buffer_len)],dtype=[("timestamp", "f"), ("pts", np.int64), ("timediff", np.int64), ("skipped", np.int64), ("pixdiff", np.int64)])
+        self.timestamp = mp.Array("d", np.zeros(self.buffer_len))
+        self.pts = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
+        self.timediff = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
+        self.skipped = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=int))
+        self.pixdiff = mp.Array("i", np.zeros(self.buffer_len, dtype=int))
         self.ind = mp.Value("i", 0)
         self.raw_arr = mp.RawArray(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1])
         self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
@@ -119,9 +125,11 @@ class CaptureCore:
 
             # capture a frame in continuous capture
             frame = camera.capture(encoding="raw", quality = 90)
-            self.timestamps[i] = time.time()
+            self.timestamp[i] = time.time()
             # presentaion timestamp
-            # pts = frame.buffer_ptr[0].pts
+            self.pts[i] = frame.buffer_ptr[0].pts
+            self.timediff[i] = self.pts[i] - self.pts[i-1]
+            self.skipped[i] = int((self.timediff[i]-2000)/10000)
 
             self.buffer_copied.wait()
             self.buffer_copied.clear()
@@ -138,7 +146,10 @@ class CaptureCore:
         for j in range(self.config["frames_after"]):
             i = self.ind.value
             frame = camera.capture(encoding="raw", quality=90)
-            self.timestamps[i] = time.time()
+            self.timestamp[i] = time.time()
+            self.pts[i] = frame.buffer_ptr[0].pts
+            self.timediff[i] = self.pts[i] - self.pts[i-1]
+            self.skipped[i] = int((self.timediff[i]-2000)/10000)
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
             self.ind.value = (i+1) % self.buffer_len
         
@@ -146,7 +157,6 @@ class CaptureCore:
         # roll buffer position so the last taken image is positioned last
         i = self.ind.value
         self.buffer[:] = np.roll(self.buffer, -i, axis=0)
-        self.timestamps[:] = np.roll(self.timestamps, -i)
 
         camera.close_camera()
         print("Camera closed.")
@@ -166,9 +176,9 @@ class CaptureCore:
             self.buffer_copied.set()
 
             # cython code for subtracting frames and count pixels above threshold
-            t = time.time()
             counter = count.diff_count(frame1, frame2, self.config["adc_threshold"])
-            #print(time.time()-t)
+            self.pixdiff[i] = counter
+
             if counter>self.config["pix_threshold"] and GPIO.input(self.config["input_pins"]["trig_en"]):
                 # send out a pulse of 100 us
                 GPIO.output(self.config["output_pins"]["trig"],GPIO.HIGH)
@@ -184,8 +194,21 @@ class CaptureCore:
     def save_images(self):
         print("Saving images . . .")
         t_overall = time.time()
+        i = self.ind.value
+
         # save timestamps of images
-        np.savetxt(self.config["save_path"]+self.config["cam_name"]+"_timestamps.csv", self.timestamps, fmt="%.9f")
+        self.caminfo = pd.DataFrame({
+            "timestamp": np.array(self.timestamp), 
+            "pts": np.array(self.pts), 
+            "timediff": np.array(self.timediff), 
+            "skipped": np.array(self.skipped), 
+            "pixdiff": np.array(self.pixdiff)})
+        self.caminfo["timestamp"] = np.roll(self.caminfo["timestamp"], -i)
+        self.caminfo["pts"] = np.roll(self.caminfo["pts"], -i)
+        self.caminfo["timediff"] = np.roll(self.caminfo["timediff"], -i)
+        self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
+        self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
+        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info.csv")
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
         
         # pool = ThreadPool(4)
