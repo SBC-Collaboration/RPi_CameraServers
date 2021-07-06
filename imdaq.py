@@ -21,6 +21,7 @@ import json
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 import pandas as pd
+import shutil
 
 # set to lowest niceness for highest priority
 pid = os.getpid()
@@ -28,20 +29,28 @@ os.system("sudo renice -n -20 -p " + str(pid))
 
 class CaptureCore:
     def __init__(self):
-        self.config_path = "config.json"
-        self.load_config(self.config_path)
+        self.load_config()
         # self.init_camera()
         self.init_gpio()
-        #self.init_buffer()
-        #self.init_multiprocessing()
+        self.init_buffer()
+        self.init_multiprocessing()
 
-    def load_config(self, config_path):
+    def load_config(self):
         print("Loading config . . .")
-        with open(config_path) as f:
+        with open("config.json") as f:
             self.config = json.load(f)
-        for k in self.config.keys():
-            print("{:<15s} {:<10s}".format(k+":",repr(self.config[k])))
-        print("")
+        try:
+            with open(self.config["config_path"]) as f:
+                self.config = json.load(f)
+            shutil.copy(self.config["config_path"],"config.json")
+        except FileNotFoundError:
+            print("Remote config file not found. Using default file.")
+            with open("config.json") as f:
+                self.config = json.load(f)
+        # print out config values
+        #for k in self.config.keys():
+        #    print("{:<15s} {:<10s}".format(k+":",repr(self.config[k])))
+        #print("")
         # size of each frame in buffer
         self.frame_size = np.product(self.config["resolution"])
         self.res = self.config["resolution"]
@@ -126,13 +135,14 @@ class CaptureCore:
             # capture a frame in continuous capture
             frame = camera.capture(encoding="raw", quality = 90)
             self.timestamp[i] = time.time()
+
+            self.buffer_copied.wait()
+            self.buffer_copied.clear()
+
             # presentaion timestamp
             self.pts[i] = frame.buffer_ptr[0].pts
             self.timediff[i] = self.pts[i] - self.pts[i-1]
             self.skipped[i] = int((self.timediff[i]-2000)/10000)
-
-            self.buffer_copied.wait()
-            self.buffer_copied.clear()
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
             self.ind.value = (i+1) % self.buffer_len
             self.frame_taken.set()
@@ -208,7 +218,7 @@ class CaptureCore:
         self.caminfo["timediff"] = np.roll(self.caminfo["timediff"], -i)
         self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
-        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info.csv")
+        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info.csv", float_format="%.9f")
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
         
         # pool = ThreadPool(4)
@@ -221,13 +231,15 @@ class CaptureCore:
         print("Images saved. Time: %.0fs.\n"%(time.time()-t_overall))
 
     def start_event(self, t=10):
+        print("Waiting for event to start . . .")
+        while not GPIO.input(self.input_pins["state_com"]):
+            time.sleep(0.001)
+
+        self.load_config()
+        GPIO.cleanup()
         self.init_gpio()
         self.init_buffer()
         self.init_multiprocessing()
-
-        print("Waiting for event to start . . .")
-        while not GPIO.input(self.input_pins["state_com"]):
-           time.sleep(0.001)
 
         t_overall = time.time()
         GPIO.output(self.output_pins["state"], GPIO.HIGH)
@@ -253,9 +265,9 @@ class CaptureCore:
 
         self.save_images()
         GPIO.output(self.output_pins["state"], GPIO.LOW)
-        GPIO.cleanup()
         
 if __name__ == "__main__":
     c = CaptureCore()
     while True:
         c.start_event(t=1200)
+    GPIO.cleanup()

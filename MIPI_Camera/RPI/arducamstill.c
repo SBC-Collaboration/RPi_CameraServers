@@ -494,6 +494,13 @@ int main(int argc, char **argv) {
     }
     arducam_manual_set_awb_compensation(globalParam.redGain,globalParam.blueGain);      
     LOG("Start preview...");
+
+    uint16_t adr = 0x380E;
+    uint16_t val = 0;
+    uint16_t *pt;
+    pt = &val;
+    arducam_read_sensor_reg(camera_instance, adr, pt);
+    printf("reg value %x, %x, %x, %x\n\n", val, pt, *pt, &pt);
     
     res = arducam_start_preview(camera_instance, &preview_params);
     if (res) {
