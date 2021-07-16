@@ -3,7 +3,7 @@
 This is the driver for camera setup for SBC Collaboration. It is hosted at [https://github.com/SBC-Collaboration/RPi_CameraServers](https://github.com/SBC-Collaboration/RPi_CameraServers). It uses Arducam OV9281 with Raspberry Pi 4B.
 
 ## Instruction
-The `imdaq.py` file is the main capture core of the camera. It will first load the configuration settings from will and set the camera with the appropriate settings. Then it will continuously capture frame using frame sync and save to a ring buffer. When interrupted, it will take remaining frames and save all frames in buffer to disk.
+The `imdaq.py` file is the main capture core of the camera. It will first load the configuration settings from will and set the camera with the appropriate settings. Then it will wait for the signal from event builder to start, before it continuously capture frames using frame sync and save to a ring buffer. When it receives a trigger latch, it will take remaining frames and save all frames in buffer to disk, with the information of those frames. Then it will load the configuration file again and wait for the signal to start another event.
 
 ## Setup
 To successfully establish connection with the camera, and to make sure the image acquisition works properly, please follow the steps below to setup the environment on the Raspberry Pi. The instructions are based on the procedure [here](https://github.com/ArduCAM/MIPI_Camera/tree/master/RPI).
@@ -14,7 +14,7 @@ To successfully establish connection with the camera, and to make sure the image
   `make install`
   `chmod +x enable_i2c_vc.sh `
   `./enable_i2c_vc.sh`
-- Enable `pigpio` daemon by running `sudo systemctl enable pigpiod` in the terminal.
+- 
 
 ## Configurations
 The `config.json` file contains necessary configurations for the camera to operate. It can be edited directly or through `configure.py` script. Below are the options:
