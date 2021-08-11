@@ -29,13 +29,15 @@ os.system("sudo renice -n -20 -p " + str(pid))
 
 class CaptureCore:
     def __init__(self):
+        print("Loading config . . .")
         self.load_config()
         self.init_gpio()
         self.init_buffer()
         self.init_multiprocessing()
 
+    # first try to load config file from remote directory
+    # falls back to local config if remote not found
     def load_config(self):
-        print("Loading config . . .")
         with open("config.json") as f:
             self.config = json.load(f)
         try:
@@ -65,9 +67,8 @@ class CaptureCore:
         GPIO.output(self.output_pins["state"],GPIO.LOW)
         GPIO.output(self.output_pins["trig"],GPIO.LOW)
 
+    # initialize image buffer and camera info buffer
     def init_buffer(self):
-        # initialize buffer
-        #self.caminfo = np.array([(0.0, 0, 0, 0, 0) for i in range(self.buffer_len)],dtype=[("timestamp", "f"), ("pts", np.int64), ("timediff", np.int64), ("skipped", np.int64), ("pixdiff", np.int64)])
         self.timestamp = mp.Array("d", np.zeros(self.buffer_len))
         self.pts = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
         self.timediff = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
@@ -78,11 +79,16 @@ class CaptureCore:
         self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
         print("Buffer initialized.")
 
+    # initialize camera instance
     def init_camera(self):
         self.camera = arducam.mipi_camera()
         self.camera.init_camera()
         
         print("Camera open.")
+        self.config_camera()
+
+    # load camera configurations
+    def config_camera(self):
         self.camera.set_resolution(*self.res)
         
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
@@ -92,6 +98,7 @@ class CaptureCore:
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
         print("Camera set.")
 
+    # initiate events and processes for multiprocessing
     def init_multiprocessing(self):
         self.frame_taken = mp.Event()
         self.buffer_copied = mp.Event()
@@ -100,21 +107,21 @@ class CaptureCore:
         self.trigger_latched = mp.Value("b", False)
         print("Multiprocessing initialized.")
 
+    # captures one frame and save to disk
     def capture_frame(self):
         self.load_config()
-        self.init_camera()
+        self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
         
         # capture single image and save to current save directory
         frame = self.camera.capture(encoding = "raw")
         buffer = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res[::-1])
         im = Image.fromarray(buffer).convert("L")
         d = datetime.now().strftime(self.config["date_format"])
-        path = os.path.join(self.config["save_path"], self.config["cam_name"]+"-"+d+self.config["image_format"])        
+        img_path = self.config["cam_name"]+"-"+d+self.config["image_format"]
+        path = os.path.join(self.config["save_path"], img_path)        
         im.save(path)
 
-        time.sleep(5)
-        self.camera.close_camera()
-        print("Image captured. Camera closed.")
+        print("Image captured: %s"%img_path)
 
     # image capturing process
     def capture(self):
@@ -251,13 +258,18 @@ class CaptureCore:
 
     def start_event(self, t=10):
         self.init_gpio()
+        self.init_camera()
         print("Waiting for event to start . . .")
-        while not GPIO.input(self.input_pins["state_com"]):
+        #while not GPIO.input(self.input_pins["state_com"]):
+        while True:
             time.sleep(0.001)
             # use trig_en when not in event to capture a single frame
             if GPIO.input(self.input_pins["trig_en"]):
                 c.capture_frame()
 
+        self.camera.close_camera()
+
+        print("Loading config . . .")
         self.load_config()
         self.init_buffer()
         self.init_multiprocessing()
@@ -282,6 +294,7 @@ class CaptureCore:
         except KeyboardInterrupt:
                 print('Interrupted.')
 
+        # wait for both processes to finish
         self.capture_process.join()
         self.detection_process.join()
 

@@ -195,7 +195,7 @@ class CaptureCore:
                 GPIO.output(self.config["output_pins"]["trig"],GPIO.HIGH)
                 time.sleep(0.0001)
                 GPIO.output(self.config["output_pins"]["trig"],GPIO.LOW)
-                # print("Detected motion: %d.\t Trigger sent."%counter)
+                print("Detected motion: %d.\t Trigger sent."%counter)
 
     def save_frame(self, i):
         # saves each from to file

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# The capture core of the RPi camera server.
-# Incoporates frame sync, motion detection, 
-# and returns ring buffer when requested
+# Variant from simple_imdaq, not dependent on event builder
+# Continuourly capture frame and detect motion
+# Saves a frame every 5 minutes
 
-import MIPI_Camera.RPI.python.arducam_mipicamera as arducam
+import arducam_mipicamera as arducam
 import v4l2
 from datetime import datetime
 import os
@@ -15,7 +15,7 @@ from PIL import Image
 import time
 import RPi.GPIO as GPIO
 import ctypes as ct
-import python.count as count
+import count
 import os
 import json
 import multiprocessing as mp
@@ -267,4 +267,4 @@ class CaptureCore:
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event(t=10000)
+    c.start_event(t=10)
