@@ -75,7 +75,6 @@ int main(int argc, char **argv) {
    // res = arducam_set_resolution(camera_instance, &width, &height);
     printf("choose the mode %d\r\n", mode );
     res= arducam_set_mode(camera_instance, mode);
-
     if (res) {
         LOG("set resolution status = %d", res);
         return -1;

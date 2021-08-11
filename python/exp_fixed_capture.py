@@ -16,10 +16,11 @@ def set_controls(camera):
         print(e)
 
 def capture(camera, exp):
+    camera.set_control(v4l2.V4L2_CID_EXPOSURE,exp)
     frame = camera.capture(encoding = 'raw', quality=90)
     d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     # path = os.path.join(os.getcwd(), "Captures", d1+".jpg")
-    path = "/home/pi/RPi_CameraServers/Captures/"+d1+"-exp-%d.bmp"%exp
+    path = "/home/pi/RPi_CameraServers/Captures/"+d1+"-exp%d.bmp"%exp
     im = Image.fromarray(np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=[800,1280])).convert("L")
     # open(path, "wb")
     # frame.as_array.tofile(path)
@@ -38,8 +39,7 @@ if __name__ == "__main__":
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         print("Current resolution is {}".format(fmt))
         # set_controls(camera)
-        for exp in [200,250,300,350,500,800]:
-            camera.set_control(v4l2.V4L2_CID_EXPOSURE,exp)
+        for exp in [100,200,300,500,800,1000]:        
             capture(camera, exp)
         print("Close camera...")
         camera.close_camera()

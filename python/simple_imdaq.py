@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# The capture core of the RPi camera server.
-# Incoporates frame sync, motion detection, 
-# and returns ring buffer when requested
+# Alternate version of imdaq
+# Starts event immediately, does not work with event builder
+# Useful in testing camera performance
 
-import MIPI_Camera.RPI.python.arducam_mipicamera as arducam
+import arducam_mipicamera as arducam
 import v4l2
 from datetime import datetime
 import os
@@ -15,7 +15,7 @@ from PIL import Image
 import time
 import RPi.GPIO as GPIO
 import ctypes as ct
-import python.count as count
+import count
 import os
 import json
 import multiprocessing as mp
@@ -28,7 +28,7 @@ os.system("sudo renice -n -20 -p " + str(pid))
 
 class CaptureCore:
     def __init__(self):
-        self.config_path = "config.json"
+        self.config_path = "../config.json"
         self.load_config(self.config_path)
         # self.init_camera()
         self.init_gpio()
@@ -148,8 +148,9 @@ class CaptureCore:
             if i==0:
                 fps = self.buffer_len/(time.time()-t_overall)
                 if fps <500:
-                    print("FPS: {:3.2f}".format(fps), end = "\t")
-                    print("Dropped: %d"%np.sum(self.skipped))
+                    print("FPS: {:3.2f}".format(fps), end="\t")
+                    print("Dropped: %d"%np.sum(self.skipped), end="\t")
+                    print("Motion: {:8d}".format(np.max(self.pixdiff)))
                 t_overall = time.time()
 
         # take remaining frames
@@ -189,14 +190,12 @@ class CaptureCore:
             t = time.time()
             counter = count.diff_count(frame1, frame2, self.config["adc_threshold"])
             self.pixdiff[i] = counter
-            #print(time.time()-t)
             if counter>self.config["pix_threshold"]: #and GPIO.input(self.config["input_pins"]["trig_en"]):
                 # send out a pulse of 100 us
-                # GPIO.output(self.config["output_pins"]["trig"],GPIO.HIGH)
-                # time.sleep(0.0001)
-                # GPIO.output(self.config["output_pins"]["trig"],GPIO.LOW)
+                GPIO.output(self.config["output_pins"]["trig"],GPIO.HIGH)
+                time.sleep(0.0001)
+                GPIO.output(self.config["output_pins"]["trig"],GPIO.LOW)
                 # print("Detected motion: %d.\t Trigger sent."%counter)
-                pass
 
     def save_frame(self, i):
         # saves each from to file
@@ -221,7 +220,7 @@ class CaptureCore:
         self.caminfo["timediff"] = np.roll(self.caminfo["timediff"], -i)
         self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
-        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info-"+datetime.now().strftime(self.config["date_format"])+".csv", float_format="%.9f")
+        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info.csv", float_format="%.9f")
         
         # reshapes image buffer and saves to disk
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
@@ -267,4 +266,4 @@ class CaptureCore:
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event(t=10)
+    c.start_event(t=1000)
