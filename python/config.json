@@ -1,6 +1,7 @@
 {
   "adc_threshold": 10,
   "exposure": 100,
+  "mode": 11,
   "pix_threshold": 199,
   "max_frames": 100,
   "frames_after": 50,
@@ -9,7 +10,7 @@
     1280,
     800
   ],
-  "save_path": "./Captures/",
+  "save_path": "../Captures/",
   "image_format": ".png",
   "date_format": "%Y-%m-%d_%H:%M:%S",
   "input_pins": {

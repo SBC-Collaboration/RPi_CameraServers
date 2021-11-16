@@ -1,4 +1,5 @@
 #include "arducam_mipicamera.h"
+#include <linux/v4l2-controls.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -92,6 +93,7 @@ int main(int argc, char **argv) {
         .window = {0, 0, 1280, 720}, // Destination rectangle for the preview window.
     };
     res = arducam_start_preview(camera_instance, &preview_params);
+    arducam_set_control(camera_instance, V4L2_CID_EXPOSURE, 800);
     if (res) {
         LOG("start preview status = %d", res);
         return -1;

@@ -45,7 +45,7 @@ class CaptureCore:
         # size of each frame in buffer
         self.frame_size = np.product(self.config["resolution"])
         self.res = self.config["resolution"]
-        self.buffer_len = self.config["buffer_len"]
+        self.buffer_len = self.config["max_frames"]
 
     def init_gpio(self):
         # using bcm mode ("GPIO #" number, not physical pin number)
@@ -81,7 +81,7 @@ class CaptureCore:
         print("Camera open.")
         self.camera.set_resolution(*self.res)
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
-        self.camera.set_mode(self.config["mode"])
+        self.camera.set_mode(11)
         self.camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         self.camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
@@ -267,4 +267,4 @@ class CaptureCore:
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event(t=10)
+    c.start_event(t=360000)

@@ -2,8 +2,9 @@
 
 This is the driver for camera setup for SBC Collaboration. It is hosted at [https://github.com/SBC-Collaboration/RPi_CameraServers](https://github.com/SBC-Collaboration/RPi_CameraServers). It uses Arducam OV9281 with Raspberry Pi 4B.
 
-## Instruction
-The `imdaq.py` file is the main capture core of the camera. It will first load the configuration settings from will and set the camera with the appropriate settings. Then it will wait for the signal from event builder to start, before it continuously capture frames using frame sync and save to a ring buffer. When it receives a trigger latch, it will take remaining frames and save all frames in buffer to disk, with the information of those frames. Then it will load the configuration file again and wait for the signal to start another event.
+## Description
+The `imdaq.py` file is the main capture core of the camera. Install this repository on a raspberry pi with arducam attached to it. Then change into the directory, and run `python3 imdaq.py` to start image capture algorithm. It will first load the configuration settings from will and set the camera with the appropriate settings. Then it will wait for the signal from event builder to start, before it continuously capture frames using frame sync and save to a ring buffer. When it receives a trigger latch, it will take remaining frames and save all frames in buffer to disk, with the information of those frames. Then it will load the configuration file again and wait for the signal to start another event. The images taken along with the info files will be saved to the save directory assigned by the event builder. 
+The `MIPI_Camera` folder contains the relevant `RPI` folder from the driver (linked below).
 
 ## Setup
 To successfully establish connection with the camera, and to make sure the image acquisition works properly, please follow the steps below to setup the environment on the Raspberry Pi. The instructions are based on the procedure [here](https://github.com/ArduCAM/MIPI_Camera/tree/master/RPI).
