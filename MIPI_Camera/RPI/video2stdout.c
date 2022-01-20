@@ -4,9 +4,10 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
 #define LOG(fmt, args...) fprintf(stderr, fmt "\n", ##args)
 // #define SOFTWARE_AE_AWB
-// #define ENABLE_PREVIEW
+#define ENABLE_PREVIEW
 
 FILE *fd;
 int frame_count = 0;
@@ -92,8 +93,15 @@ int main(int argc, char **argv) {
         .opacity = 255,              // Opacity of window - 0 = transparent, 255 = opaque
         .window = {0, 0, 1280, 720}, // Destination rectangle for the preview window.
     };
+    char *p; // prepare to convert exposure argument to integer
+    long exp;
+    if (argc > 1) {
+      exp = strtol(argv[1], &p, 10);
+    } else {
+      exp = 300; // default set to 300
+    }
     res = arducam_start_preview(camera_instance, &preview_params);
-    arducam_set_control(camera_instance, V4L2_CID_EXPOSURE, 800);
+    arducam_set_control(camera_instance, V4L2_CID_EXPOSURE, exp);
     if (res) {
         LOG("start preview status = %d", res);
         return -1;
