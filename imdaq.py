@@ -25,32 +25,29 @@ import pandas as pd
 import shutil
 import logging, logging.handlers as handlers
 
-camname = socket.gethostname()
-
-# logging.basicConfig(level=logging.DEBUG,
-#                     format='%(asctime)s %(levelname)-8s %(message)s',
-#                     datefmt='%Y-%m-%d %H:%M:%S',
-#                     filename='cam.log',
-#                     filemode='a')
-logging.basicConfig(level=logging.DEBUG,
-                    format=camname+': %(message)s')
-
-fileHandler = handlers.WatchedFileHandler('/mnt/DAQ/temp/cam.log')
-fileHandler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('cam0-%(asctime)s %(message)s', datefmt='%H:%M:%S')
-fileHandler.setFormatter(formatter)
-logging.getLogger('').addHandler(fileHandler)
-
 # set to lowest niceness for highest priority
 pid = os.getpid()
 os.system("sudo renice -n -20 -p " + str(pid))
 
 class CaptureCore:
     def __init__(self):
+        self.init_logging()
         self.load_config()
         self.init_gpio()
         self.init_buffer()
         self.init_multiprocessing()
+
+    def init_logging():
+        self.cam_name = socket.gethostname()
+
+        logging.basicConfig(level=logging.INFO,
+                            format=self.cam_name+': %(message)s')
+
+        fileHandler = handlers.WatchedFileHandler(f"./{self.cam_name}.log")
+        fileHandler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(f'{self.cam_name}-%(asctime)s %(message)s', datefmt='%H:%M:%S')
+        fileHandler.setFormatter(formatter)
+        logging.getLogger('').addHandler(fileHandler)
 
     def load_config(self):
         logging.info("Loading config . . .")
@@ -65,35 +62,33 @@ class CaptureCore:
             with open("config.json") as f:
                 self.config = json.load(f)
 
-        self.frame_size = np.product(self.config["resolution"])
-        self.res = self.config["resolution"]
-        self.buffer_len = self.config["buffer_len"]
-
     def init_gpio(self):
         # using bcm mode ("GPIO #" number, not physical pin number)
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
-        self.input_pins = self.config["input_pins"]
-        GPIO.setup(self.input_pins["state_com"],GPIO.IN)
-        GPIO.setup(self.input_pins["trig_en"],GPIO.IN)
-        GPIO.setup(self.input_pins["trig_latch"],GPIO.IN)
-        self.output_pins = self.config["output_pins"]
-        GPIO.setup(self.output_pins["state"],GPIO.OUT, initial=0)
-        GPIO.setup(self.output_pins["trig"],GPIO.OUT, initial=0)
-        GPIO.output(self.output_pins["state"],GPIO.LOW)
-        GPIO.output(self.output_pins["trig"],GPIO.LOW)
+        GPIO.setup(self.config["state_comm_pin"],GPIO.IN)
+        GPIO.setup(self.config["trig_en_pin"],GPIO.IN)
+        GPIO.setup(self.config["trig_latch_pin"],GPIO.IN)
+        GPIO.setup(self.config["state_pin"],GPIO.OUT, initial=0)
+        GPIO.setup(self.config["trig_pin"],GPIO.OUT, initial=0)
+        GPIO.output(self.config["state_pin"],GPIO.LOW)
+        GPIO.output(self.config["trig_pin"],GPIO.LOW)
 
     def init_buffer(self):
         # initialize buffer
-        #self.caminfo = np.array([(0.0, 0, 0, 0, 0) for i in range(self.buffer_len)],dtype=[("timestamp", "f"), ("pts", np.int64), ("timediff", np.int64), ("skipped", np.int64), ("pixdiff", np.int64)])
-        self.timestamp = mp.Array("d", np.zeros(self.buffer_len))
-        self.pts = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
-        self.timediff = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
-        self.skipped = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=int))
-        self.pixdiff = mp.Array("i", np.zeros(self.buffer_len, dtype=int))
+        if self.config["mode"] in [5,11]:
+            self.res = [1280, 800]
+            self.frame_size = np.product(self.res)
+        else:
+            logging.error("Camera mode not supported!")
+        self.timestamp = mp.Array("d", np.zeros(self.config["buffer_len"]))
+        self.pts = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=np.uint64))
+        self.timediff = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=np.uint64))
+        self.skipped = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=int))
+        self.pixdiff = mp.Array("i", np.zeros(self.config["buffer_len"], dtype=int))
         self.ind = mp.Value("i", -1)
-        self.raw_arr = mp.RawArray(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1])
-        self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
+        self.raw_arr = mp.RawArray(ct.c_uint8, self.config["buffer_len"]*self.res[0]*self.res[1])
+        self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.config["buffer_len"],*self.res])
         logging.info("Buffer initialized.")
 
     def init_camera(self):
@@ -136,7 +131,7 @@ class CaptureCore:
         buffer = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res[::-1])
         im = Image.fromarray(buffer).convert("L")
         d = datetime.now().strftime(self.config["date_format"])
-        path = os.path.join(self.config["save_path"], self.config["cam_name"]+"-"+d+self.config["image_format"])        
+        path = os.path.join(self.config["data_path"], self.config["cam_name"]+"-"+d+"."+self.config["image_format"])        
         im.save(path)
         logging.info("Image captured and saved.")
         camera.close_camera()
@@ -149,16 +144,16 @@ class CaptureCore:
         camera.init_camera()
         
         logging.info("Camera open.")
-        camera.set_resolution(*self.config["resolution"])
+        camera.set_resolution(*self.res)
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
         camera.set_mode(self.config["mode"])
         camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        logging.info("Camera set.\n")
+        logging.info("Camera ready.\n")
 
         t_overall = time.time()
-        GPIO.output(self.output_pins["state"], GPIO.HIGH)
+        GPIO.output(self.config["state_pin"], GPIO.HIGH)
 
         # loop when trigger not latched
         while not self.trigger_latched.value:
@@ -180,19 +175,19 @@ class CaptureCore:
             self.skipped[i] = int((self.timediff[i]-2000)/10000)
             # saves image to buffer
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-            self.ind.value = (i+1) % self.buffer_len
+            self.ind.value = (i+1) % self.config["buffer_len"]
             self.frame_taken.set()
 
             # print FPS every time buffer is filled
             if i==0:
-                fps = self.buffer_len/(time.time()-t_overall)
+                fps = self.config["buffer_len"]/(time.time()-t_overall)
                 motion = np.max(self.pixdiff)
                 if fps<500: # omit the first time
                     logging.info("FPS: %3.2f, Dropped: %4d, Motion: %4d",fps,np.sum(self.skipped),motion)
                 t_overall = time.time()
 
         # take remaining frames
-        for j in range(self.config["frames_after"]):
+        for j in range(self.config["post_trig"]):
             i = self.ind.value
             frame = camera.capture(encoding="raw", quality=90)
             self.timestamp[i] = time.time()
@@ -200,7 +195,7 @@ class CaptureCore:
             self.timediff[i] = self.pts[i] - self.pts[i-1]
             self.skipped[i] = int((self.timediff[i]-2000)/10000)
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-            self.ind.value = (i+1) % self.buffer_len
+            self.ind.value = (i+1) % self.config["buffer_len"]
         
         logging.info("Remaining frames taken.")
         # roll buffer position so the last taken image is positioned last
@@ -212,8 +207,8 @@ class CaptureCore:
 
     def detect_motion(self):
         # create two local buffer of two frames
-        frame1 = np.zeros(self.config["resolution"], dtype=np.uint8)
-        frame2 = np.zeros(self.config["resolution"], dtype=np.uint8)
+        frame1 = np.zeros(self.res, dtype=np.uint8)
+        frame2 = np.zeros(self.res, dtype=np.uint8)
         # tells capturing process that buffer copying is complete
         self.buffer_copied.set()
 
@@ -232,17 +227,17 @@ class CaptureCore:
             counter = count.diff_count(frame1, frame2, self.config["adc_threshold"])
             self.pixdiff[i] = counter
 
-            if counter>self.config["pix_threshold"] and GPIO.input(self.config["input_pins"]["trig_en"]):
+            if counter>self.config["pix_threshold"] and GPIO.input(self.config["trig_en_pin"]):
                 # send out a pulse of 100 us
-                GPIO.output(self.config["output_pins"]["trig"],GPIO.HIGH)
+                GPIO.output(self.config["trig_pin"],GPIO.HIGH)
                 time.sleep(0.0001)
-                GPIO.output(self.config["output_pins"]["trig"],GPIO.LOW)
+                GPIO.output(self.config["trig_pin"],GPIO.LOW)
                 logging.info("Detected motion: %d.\t Trigger sent."%counter)
 
     def save_frame(self, i):
         # saves each from to file
         im = Image.fromarray(self.buffer[i]).convert("L")
-        filename = self.config["save_path"]+self.config["cam_name"]+"-img{:02}".format(i)+self.config["image_format"]
+        filename = self.config["data_path"]+self.config["cam_name"]+"-img{:02}".format(i)+"."+self.config["image_format"]
         im.save(filename)
 
     def save_images(self):
@@ -262,15 +257,15 @@ class CaptureCore:
         self.caminfo["timediff"] = np.roll(self.caminfo["timediff"], -i)
         self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
-        self.caminfo.to_csv(self.config["save_path"]+self.config["cam_name"]+"-info.csv", float_format="%.9f")
+        self.caminfo.to_csv(self.config["data_path"]+self.config["cam_name"]+"-info.csv", float_format="%.9f")
         
         # reshapes image buffer and saves to disk
-        self.buffer = np.reshape(self.buffer,tuple(np.array([self.buffer_len, self.res[1], self.res[0]])))
+        self.buffer = np.reshape(self.buffer,tuple(np.array([self.config["buffer_len"], self.res[1], self.res[0]])))
         # pool = ThreadPool(4)
-        # pool.map(self.save_frame, range(self.buffer_len))
-        for i in range(self.buffer_len):
+        # pool.map(self.save_frame, range(self.config["buffer_len"]))
+        for i in range(self.config["buffer_len"]):
             im = Image.fromarray(self.buffer[i]).convert("L")
-            filename = self.config["save_path"]+self.config["cam_name"]+"-img{:02}".format(i)+self.config["image_format"]
+            filename = self.config["data_path"]+self.config["cam_name"]+"-img{:02}".format(i)+"."+self.config["image_format"]
             im.save(filename)
 
         logging.info("Images saved. Time: %.0fs."%(time.time()-t_overall))
@@ -278,10 +273,10 @@ class CaptureCore:
     def start_event(self):
         self.init_gpio()
         logging.info("Waiting for event to start . . .")
-        while not GPIO.input(self.input_pins["state_com"]):
+        while not GPIO.input(self.config["state_comm_pin"]):
             time.sleep(0.001)
             # use trig_en when not in event to capture a single frame
-            if GPIO.input(self.input_pins["trig_en"]):
+            if GPIO.input(self.config["trig_en_pin"]):
                 self.capture_frame_process = mp.Process(target=self.capture_frame)
                 self.capture_frame_process.start()
                 self.capture_frame_process.join()
@@ -300,7 +295,7 @@ class CaptureCore:
             logging.info("Processes started.")
 
             time.sleep(1)
-            while not GPIO.input(self.input_pins["trig_latch"]):
+            while not GPIO.input(self.config["trig_latch_pin"]):
             # and time.time()-t_overall<t:
                 time.sleep(0.001)
 
@@ -314,7 +309,7 @@ class CaptureCore:
         self.detection_process.join()
 
         self.save_images()
-        GPIO.output(self.output_pins["state"], GPIO.LOW)
+        GPIO.output(self.config["state_pin"], GPIO.LOW)
         #GPIO.cleanup()
         
 if __name__ == "__main__":
