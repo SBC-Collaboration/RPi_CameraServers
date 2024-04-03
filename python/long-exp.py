@@ -14,7 +14,7 @@ def set_controls(camera):
         print(e)
 
 def capture(camera):
-    frame = camera.capture(encoding = 'jpeg')
+    frame = camera.capture(encoding = 'bmp')
     d1 = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     path = os.path.join(os.getcwd(), "Captures", d1+".jpg")
     path = "/home/pi/RPi_CameraServers/Captures/"+d1+".bmp"
@@ -32,10 +32,11 @@ if __name__ == "__main__":
             fmt = camera.set_resolution(1920, 1080)
             camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
             camera.set_control(v4l2.V4L2_CID_HFLIP,1)
-            # camera.set_control(v4l2.V4L2_CID_EXPOSURE,300)
+            camera.software_auto_exposure(enable = False)
+            camera.set_control(v4l2.V4L2_CID_EXPOSURE,300)
             # camera.set_control(v4l2.V4L2_CID_GAIN,4)
             print("Current resolution is {}".format(fmt))
-            set_controls(camera)
+            # set_controls(camera)
             capture(camera)
             print("Close camera...")
             camera.close_camera()

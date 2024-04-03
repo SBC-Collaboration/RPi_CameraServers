@@ -162,7 +162,8 @@ class CaptureCore:
                 fps = self.buffer_len/(time.time()-t_overall)
                 if fps <500:
                     print("FPS: {:3.2f}".format(fps), end = "\t")
-                    print("Dropped: %d"%np.sum(self.skipped))
+                    print("Dropped: %d"%np.sum(self.skipped), end="\t")
+                    print("Motion: {:8d}".format(np.max(self.pixdiff)))
                 t_overall = time.time()
 
         i = self.ind.value
@@ -250,7 +251,7 @@ class CaptureCore:
 
             # while not GPIO.input(self.input_pins["trig_latch"]):
             while (time.time()-t_overall)<t:
-                time.sleep(0.001)
+                time.sleep(0.1)
 
             self.trigger_latched.value = True
             print("\nTrigger latched.")
