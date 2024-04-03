@@ -37,7 +37,7 @@ class CaptureCore:
         self.init_buffer()
         self.init_multiprocessing()
 
-    def init_logging():
+    def init_logging(self):
         self.cam_name = socket.gethostname()
 
         logging.basicConfig(level=logging.INFO,
@@ -93,8 +93,12 @@ class CaptureCore:
 
     def init_camera(self):
         self.camera = arducam.mipi_camera()
-        self.camera.init_camera()
-        
+        try:
+            self.camera.init_camera()
+        except RuntimeError:
+            logging.error("Camera not found!")
+            return
+
         logging.info("Camera open.")
         self.camera.set_resolution(*self.res)
         
@@ -106,6 +110,7 @@ class CaptureCore:
         logging.info("Camera set.")
 
     def init_multiprocessing(self):
+        self.camera_found = mp.Event()
         self.frame_taken = mp.Event()
         self.buffer_copied = mp.Event()
         self.capture_process = mp.Process(target=self.capture)
@@ -117,7 +122,12 @@ class CaptureCore:
         self.load_config()
 
         camera = arducam.mipi_camera()
-        camera.init_camera()
+        try:
+            camera.init_camera()
+        except RuntimeError:
+            logging.error("Camera not found!")
+            return
+
         logging.info("Camera open.")
         camera.set_resolution(*self.res)
         camera.set_mode(self.config["mode"])
@@ -141,8 +151,12 @@ class CaptureCore:
     def capture(self):
         # create camera instance, and initialize
         camera = arducam.mipi_camera()
-        camera.init_camera()
-        
+        try:
+            camera.init_camera()
+        except RuntimeError:
+            return
+
+        self.camera_found.set()
         logging.info("Camera open.")
         camera.set_resolution(*self.res)
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
@@ -203,7 +217,7 @@ class CaptureCore:
         self.buffer[:] = np.roll(self.buffer, -i, axis=0)
 
         camera.close_camera()
-        logging.info("Camera closed.")
+        logging.info("Capture thread quitted. Camera closed.")
 
     def detect_motion(self):
         # create two local buffer of two frames
@@ -233,6 +247,8 @@ class CaptureCore:
                 time.sleep(0.0001)
                 GPIO.output(self.config["trig_pin"],GPIO.LOW)
                 logging.info("Detected motion: %d.\t Trigger sent."%counter)
+        
+        logging.info("Motion detection thread quitted.")
 
     def save_frame(self, i):
         # saves each from to file
@@ -291,6 +307,10 @@ class CaptureCore:
         try:
             # start processes
             self.capture_process.start()
+            # wait maximum 5 seconds for camera to open
+            if not self.camera_found.wait(5):
+                logging.error("Camera not found. Quitting.")
+                return
             self.detection_process.start()
             logging.info("Processes started.")
 
@@ -314,7 +334,5 @@ class CaptureCore:
         
 if __name__ == "__main__":
     c = CaptureCore()
-    while True:
-        c.start_event()
-    #GPIO.cleanup()
-    logging.info("Done")
+    c.start_event()
+    logging.info("Program finished.")
