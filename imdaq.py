@@ -141,7 +141,7 @@ class CaptureCore:
         buffer = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res[::-1])
         im = Image.fromarray(buffer).convert("L")
         d = datetime.now().strftime(self.config["date_format"])
-        path = os.path.join(self.config["data_path"], self.config["cam_name"]+"-"+d+"."+self.config["image_format"])        
+        path = os.path.join(self.config["data_path"], self.cam_name+"-"+d+"."+self.config["image_format"])        
         im.save(path)
         logging.info("Image captured and saved.")
         camera.close_camera()
@@ -253,7 +253,7 @@ class CaptureCore:
     def save_frame(self, i):
         # saves each from to file
         im = Image.fromarray(self.buffer[i]).convert("L")
-        filename = self.config["data_path"]+self.config["cam_name"]+"-img{:02}".format(i)+"."+self.config["image_format"]
+        filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
         im.save(filename)
 
     def save_images(self):
@@ -273,7 +273,8 @@ class CaptureCore:
         self.caminfo["timediff"] = np.roll(self.caminfo["timediff"], -i)
         self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
-        self.caminfo.to_csv(self.config["data_path"]+self.config["cam_name"]+"-info.csv", float_format="%.9f")
+        self.info_path = os.path.join(self.config["data_path"], self.cam_name+"-info.csv")
+        self.caminfo.to_csv(self.info_path, float_format="%.9f")
         
         # reshapes image buffer and saves to disk
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.config["buffer_len"], self.res[1], self.res[0]])))
@@ -281,7 +282,7 @@ class CaptureCore:
         # pool.map(self.save_frame, range(self.config["buffer_len"]))
         for i in range(self.config["buffer_len"]):
             im = Image.fromarray(self.buffer[i]).convert("L")
-            filename = self.config["data_path"]+self.config["cam_name"]+"-img{:02}".format(i)+"."+self.config["image_format"]
+            filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
             im.save(filename)
 
         logging.info("Images saved. Time: %.0fs."%(time.time()-t_overall))
