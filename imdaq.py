@@ -43,12 +43,6 @@ class CaptureCore:
         logging.basicConfig(level=logging.INFO,
                             format=self.cam_name+': %(message)s')
 
-        fileHandler = handlers.WatchedFileHandler(f"./{self.cam_name}.log")
-        fileHandler.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(f'{self.cam_name}-%(asctime)s %(message)s', datefmt='%H:%M:%S')
-        fileHandler.setFormatter(formatter)
-        logging.getLogger('').addHandler(fileHandler)
-
     def load_config(self):
         logging.info("Loading config . . .")
         with open("config.json") as f:
@@ -61,6 +55,18 @@ class CaptureCore:
             logging.error("Remote config file not found. Using default file.")
             with open("config.json") as f:
                 self.config = json.load(f)
+        
+        # Add file handler at data folder
+        logger = logging.getLogger("")
+        try:
+            logger.removeHandler(self.fileHandler)
+        except AttributeError:
+            pass
+        self.fileHandler = handlers.WatchedFileHandler(os.path.join(self.config["data_path"], f"{self.cam_name}.log"))
+        self.fileHandler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(f'{self.cam_name}-%(asctime)s > %(message)s')
+        self.fileHandler.setFormatter(formatter)
+        logger.addHandler(self.fileHandler)
 
     def init_gpio(self):
         # using bcm mode ("GPIO #" number, not physical pin number)
@@ -69,9 +75,9 @@ class CaptureCore:
         GPIO.setup(self.config["state_comm_pin"],GPIO.IN)
         GPIO.setup(self.config["trig_en_pin"],GPIO.IN)
         GPIO.setup(self.config["trig_latch_pin"],GPIO.IN)
-        GPIO.setup(self.config["state_pin"],GPIO.OUT, initial=0)
+        GPIO.setup(self.config["state_pin"],GPIO.OUT, initial=1)
         GPIO.setup(self.config["trig_pin"],GPIO.OUT, initial=0)
-        GPIO.output(self.config["state_pin"],GPIO.LOW)
+        GPIO.output(self.config["state_pin"],GPIO.HIGH)
         GPIO.output(self.config["trig_pin"],GPIO.LOW)
 
     def init_buffer(self):
@@ -167,7 +173,7 @@ class CaptureCore:
         logging.info("Camera ready.\n")
 
         t_overall = time.time()
-        GPIO.output(self.config["state_pin"], GPIO.HIGH)
+        GPIO.output(self.config["state_pin"], GPIO.LOW)
 
         # loop when trigger not latched
         while not self.trigger_latched.value:
@@ -315,7 +321,7 @@ class CaptureCore:
             self.detection_process.start()
             logging.info("Processes started.")
 
-            time.sleep(1)
+#            time.sleep(1)
             while not GPIO.input(self.config["trig_latch_pin"]):
             # and time.time()-t_overall<t:
                 time.sleep(0.001)
@@ -330,10 +336,11 @@ class CaptureCore:
         self.detection_process.join()
 
         self.save_images()
-        GPIO.output(self.config["state_pin"], GPIO.LOW)
+        GPIO.output(self.config["state_pin"], GPIO.HIGH)
         #GPIO.cleanup()
         
 if __name__ == "__main__":
     c = CaptureCore()
-    c.start_event()
+    while True:
+        c.start_event()
     logging.info("Program finished.")
