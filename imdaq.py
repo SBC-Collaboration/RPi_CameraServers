@@ -75,10 +75,8 @@ class CaptureCore:
         GPIO.setup(self.config["state_comm_pin"],GPIO.IN)
         GPIO.setup(self.config["trig_en_pin"],GPIO.IN)
         GPIO.setup(self.config["trig_latch_pin"],GPIO.IN)
-        GPIO.setup(self.config["state_pin"],GPIO.OUT, initial=1)
+        GPIO.setup(self.config["state_pin"],GPIO.OUT, initial=0)
         GPIO.setup(self.config["trig_pin"],GPIO.OUT, initial=0)
-        GPIO.output(self.config["state_pin"],GPIO.HIGH)
-        GPIO.output(self.config["trig_pin"],GPIO.LOW)
 
     def init_buffer(self):
         # initialize buffer
@@ -170,10 +168,9 @@ class CaptureCore:
         camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        logging.info("Camera ready.\n")
+        logging.info("Camera active.")
 
         t_overall = time.time()
-        GPIO.output(self.config["state_pin"], GPIO.LOW)
 
         # loop when trigger not latched
         while not self.trigger_latched.value:
@@ -205,6 +202,8 @@ class CaptureCore:
                 if fps<500: # omit the first time
                     logging.info("FPS: %3.2f, Dropped: %4d, Motion: %4d",fps,np.sum(self.skipped),motion)
                 t_overall = time.time()
+        
+        self.frame_taken.set()
 
         # take remaining frames
         for j in range(self.config["post_trig"]):
@@ -250,10 +249,10 @@ class CaptureCore:
             if counter>self.config["pix_threshold"] and GPIO.input(self.config["trig_en_pin"]):
                 # send out a pulse of 100 us
                 GPIO.output(self.config["trig_pin"],GPIO.HIGH)
-                time.sleep(0.0001)
-                GPIO.output(self.config["trig_pin"],GPIO.LOW)
                 logging.info("Detected motion: %d.\t Trigger sent."%counter)
-        
+	
+        self.buffer_copied.set()
+        GPIO.output(self.config["trig_pin"],GPIO.LOW)
         logging.info("Motion detection thread quitted.")
 
     def save_frame(self, i):
@@ -291,21 +290,21 @@ class CaptureCore:
             filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
             im.save(filename)
 
-        logging.info("Images saved. Time: %.0fs."%(time.time()-t_overall))
+        logging.info("Images saved. Time: %.0fs.\n"%(time.time()-t_overall))
 
     def start_event(self):
-        self.init_gpio()
+        GPIO.output(self.config["state_pin"], GPIO.LOW)
         logging.info("Waiting for event to start . . .")
+
         while not GPIO.input(self.config["state_comm_pin"]):
             time.sleep(0.001)
             # use trig_en when not in event to capture a single frame
-            if GPIO.input(self.config["trig_en_pin"]):
-                self.capture_frame_process = mp.Process(target=self.capture_frame)
-                self.capture_frame_process.start()
-                self.capture_frame_process.join()
-                return
+#            if GPIO.input(self.config["trig_en_pin"]):
+#                self.capture_frame_process = mp.Process(target=self.capture_frame)
+#                self.capture_frame_process.start()
+#                self.capture_frame_process.join()
+#                return
 
-        self.load_config()
         self.init_buffer()
         self.init_multiprocessing()
 
@@ -321,10 +320,11 @@ class CaptureCore:
             self.detection_process.start()
             logging.info("Processes started.")
 
-#            time.sleep(1)
+            GPIO.output(self.config["state_pin"], GPIO.HIGH)
+
             while not GPIO.input(self.config["trig_latch_pin"]):
             # and time.time()-t_overall<t:
-                time.sleep(0.001)
+                time.sleep(0.005)
 
             self.trigger_latched.value = True
             logging.info("Trigger latched.")
@@ -336,11 +336,14 @@ class CaptureCore:
         self.detection_process.join()
 
         self.save_images()
-        GPIO.output(self.config["state_pin"], GPIO.HIGH)
-        #GPIO.cleanup()
+        
         
 if __name__ == "__main__":
     c = CaptureCore()
+    c.init_gpio()
+    c.load_config()
+    logging.info("Image acquisition started.")
     while True:
         c.start_event()
     logging.info("Program finished.")
+    GPIO.cleanup()
