@@ -111,6 +111,7 @@ class CaptureCore:
         self.camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         self.camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
+        self.camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
         logging.info("Camera set.")
 
     def init_multiprocessing(self):
@@ -138,6 +139,7 @@ class CaptureCore:
         camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
+        camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
         logging.info("Camera set.")
         
         # capture single image and save to current save directory
@@ -168,6 +170,7 @@ class CaptureCore:
         camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
         camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
+        camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
         logging.info("Camera active.")
 
         t_overall = time.time()
