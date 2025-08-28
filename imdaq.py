@@ -67,6 +67,7 @@ class CaptureCore:
         formatter = logging.Formatter(f'{self.cam_name}-%(asctime)s > %(message)s')
         self.fileHandler.setFormatter(formatter)
         logger.addHandler(self.fileHandler)
+        logging.info("File logger added")
 
     def init_gpio(self):
         # using bcm mode ("GPIO #" number, not physical pin number)
@@ -301,12 +302,6 @@ class CaptureCore:
 
         while not GPIO.input(self.config["state_comm_pin"]):
             time.sleep(0.001)
-            # use trig_en when not in event to capture a single frame
-#            if GPIO.input(self.config["trig_en_pin"]):
-#                self.capture_frame_process = mp.Process(target=self.capture_frame)
-#                self.capture_frame_process.start()
-#                self.capture_frame_process.join()
-#                return
 
         self.init_buffer()
         self.init_multiprocessing()
@@ -346,7 +341,14 @@ if __name__ == "__main__":
     c.init_gpio()
     c.load_config()
     logging.info("Image acquisition started.")
-    while True:
-        c.start_event()
+    if len(sys.argv)==1:
+        while True:
+            c.start_event()
+    elif len(sys.argv)>1 and sys.argv[1]=="-s":
+        c.capture_frame()
+    else:
+        logging.error("Parameter not recognized")
+        sys.exit(1)
+
     logging.info("Program finished.")
     GPIO.cleanup()
