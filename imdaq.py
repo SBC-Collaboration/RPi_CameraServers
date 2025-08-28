@@ -25,9 +25,11 @@ import pandas as pd
 import shutil
 import logging, logging.handlers as handlers
 
-# set to lowest niceness for highest priority
 pid = os.getpid()
-os.system("sudo renice -n -20 -p " + str(pid))
+# real-time scheduling set to highest priority
+os.system("sudo chrt -f -p 99 " + str(pid))
+# set this process to CPU core 0
+os.system("sudo taskset -cp 0 " + str(pid))
 
 class CaptureCore:
     def __init__(self):
@@ -123,6 +125,11 @@ class CaptureCore:
         self.detection_process = mp.Process(target=self.detect_motion)
         self.trigger_latched = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
+
+    def start_process(self, process, core):
+        process.start()
+        os.system("sudo chrt -f -p 99 " + str(process.pid))
+        os.system("sudo taskset -cp " + str(core) + " " + str(process.pid))
 
     def capture_frame(self):
         self.load_config()
@@ -310,12 +317,12 @@ class CaptureCore:
 
         try:
             # start processes
-            self.capture_process.start()
+            self.start_process(self.capture_process, 1)
             # wait maximum 5 seconds for camera to open
             if not self.camera_found.wait(5):
                 logging.error("Camera not found. Quitting.")
                 return
-            self.detection_process.start()
+            self.start_process(self.detection_process, 2)
             logging.info("Processes started.")
 
             GPIO.output(self.config["state_pin"], GPIO.HIGH)
