@@ -20,10 +20,11 @@ import python.count as count
 import os
 import json
 import multiprocessing as mp
-from multiprocessing.pool import ThreadPool
 import pandas as pd
 import shutil
 import logging, logging.handlers as handlers
+import struct
+import argparse
 
 pid = os.getpid()
 # real-time scheduling set to highest priority
@@ -125,6 +126,18 @@ class CaptureCore:
         self.detection_process = mp.Process(target=self.detect_motion)
         self.trigger_latched = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
+    
+    def init_socket(self):
+        host = "192.168.137.3"
+        port = 12345
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((host, port))
+
+    def send_image(self, image):
+        # Serialize the image using struct
+        data = struct.pack("!I", len(image)) + image
+        self.socket.sendall(data)
+        logging.info("Image sent through socket.")
 
     def start_process(self, process, core):
         process.start()
@@ -341,21 +354,28 @@ class CaptureCore:
         self.detection_process.join()
 
         self.save_images()
+    
+    def start_live(self):
+        return
         
         
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Arducam Image Capture Core")
+    parser.add_argument("-s", "--single", type=bool, default=False, help="Capture a single frame.")
+    parser.add_argument("-l", "--live", type=bool, default=False, help="Start live commissioning.")
+    args = parser.parse_args()
+
     c = CaptureCore()
     c.init_gpio()
     c.load_config()
     logging.info("Image acquisition started.")
-    if len(sys.argv)==1:
+    if args.single:
+        c.capture_frame()
+    elif args.live:
+        c.start_live()
+    else:
         while True:
             c.start_event()
-    elif len(sys.argv)>1 and sys.argv[1]=="-s":
-        c.capture_frame()
-    else:
-        logging.error("Parameter not recognized")
-        sys.exit(1)
 
     logging.info("Program finished.")
     GPIO.cleanup()
