@@ -205,14 +205,6 @@ class CaptureCore:
             self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
             self.ind.value = (i+1) % self.config["buffer_len"]
             self.frame_taken.set()
-
-            # print FPS every time buffer is filled
-            if i==0:
-                fps = self.config["buffer_len"]/(time.time()-t_overall)
-                motion = np.max(self.pixdiff)
-                if fps<500: # omit the first time
-                    logging.info("FPS: %3.2f, Dropped: %4d, Motion: %4d",fps,np.sum(self.skipped),motion)
-                t_overall = time.time()
         
         self.frame_taken.set()
 
