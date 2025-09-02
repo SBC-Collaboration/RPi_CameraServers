@@ -20,10 +20,11 @@ import python.count as count
 import os
 import json
 import multiprocessing as mp
-from multiprocessing.pool import ThreadPool
 import pandas as pd
 import shutil
 import logging, logging.handlers as handlers
+import struct
+import argparse
 
 pid = os.getpid()
 # real-time scheduling set to highest priority
@@ -118,13 +119,31 @@ class CaptureCore:
         logging.info("Camera set.")
 
     def init_multiprocessing(self):
-        self.camera_found = mp.Event()
+        self.camera_set = mp.Event()
         self.frame_taken = mp.Event()
         self.buffer_copied = mp.Event()
         self.capture_process = mp.Process(target=self.capture)
         self.detection_process = mp.Process(target=self.detect_motion)
         self.trigger_latched = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
+    
+    def init_socket(self):
+        host = "192.168.137.3"
+        port = 12345
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((host, port))
+
+    def send_image(self, image):
+        if self.socket is None:
+            self.init_socket()
+
+        # Serialize the image using struct
+        try:
+            data = struct.pack("!I", len(image)) + image
+            self.socket.sendall(data)
+            logging.info("Image sent through socket.")
+        except Exception as e:
+            logging.error(f"Error sending image: {e}")
 
     def start_process(self, process, core):
         process.start()
@@ -133,53 +152,24 @@ class CaptureCore:
 
     def capture_frame(self):
         self.load_config()
+        self.init_camera()
 
-        camera = arducam.mipi_camera()
-        try:
-            camera.init_camera()
-        except RuntimeError:
-            logging.error("Camera not found!")
-            return
-
-        logging.info("Camera open.")
-        camera.set_resolution(*self.res)
-        camera.set_mode(self.config["mode"])
-        camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
-        camera.set_control(v4l2.V4L2_CID_HFLIP,1)
-        camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
-        logging.info("Camera set.")
-        
         # capture single image and save to current save directory
-        frame = camera.capture(encoding="raw", quality = 90)
+        frame = self.camera.capture(encoding="raw", quality = 90)
         buffer = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res[::-1])
         im = Image.fromarray(buffer).convert("L")
         d = datetime.now().strftime(self.config["date_format"])
         path = os.path.join(self.config["data_path"], self.cam_name+"-"+d+"."+self.config["image_format"])        
         im.save(path)
         logging.info("Image captured and saved.")
-        camera.close_camera()
+        self.camera.close_camera()
         logging.info("Camera closed.")
 
     # image capturing process
     def capture(self):
         # create camera instance, and initialize
-        camera = arducam.mipi_camera()
-        try:
-            camera.init_camera()
-        except RuntimeError:
-            return
-
-        self.camera_found.set()
-        logging.info("Camera open.")
-        camera.set_resolution(*self.res)
-        # use mode 5 or 11 for 1280x800 2lane raw8 capture
-        camera.set_mode(self.config["mode"])
-        camera.set_control(v4l2.V4L2_CID_VFLIP, 1)
-        camera.set_control(v4l2.V4L2_CID_HFLIP,1)
-        camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
-        camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
-        logging.info("Camera active.")
+        self.init_camera()
+        self.camera_set.set()
 
         t_overall = time.time()
 
@@ -188,7 +178,7 @@ class CaptureCore:
             i = self.ind.value
 
             # capture a frame in continuous capture
-            frame = camera.capture(encoding="raw", quality = 90)
+            frame = self.camera.capture(encoding="raw", quality = 90)
             self.timestamp[i] = time.time()
 
             # wait for detection thread to finish copying from buffer
@@ -211,7 +201,7 @@ class CaptureCore:
         # take remaining frames
         for j in range(self.config["post_trig"]):
             i = self.ind.value
-            frame = camera.capture(encoding="raw", quality=90)
+            frame = self.camera.capture(encoding="raw", quality=90)
             self.timestamp[i] = time.time()
             self.pts[i] = frame.buffer_ptr[0].pts
             self.timediff[i] = self.pts[i] - self.pts[i-1]
@@ -224,7 +214,7 @@ class CaptureCore:
         i = self.ind.value
         self.buffer[:] = np.roll(self.buffer, -i, axis=0)
 
-        camera.close_camera()
+        self.camera.close_camera()
         logging.info("Capture thread quitted. Camera closed.")
 
     def detect_motion(self):
@@ -311,7 +301,7 @@ class CaptureCore:
             # start processes
             self.start_process(self.capture_process, 1)
             # wait maximum 5 seconds for camera to open
-            if not self.camera_found.wait(5):
+            if not self.camera_set.wait(5):
                 logging.error("Camera not found. Quitting.")
                 return
             self.start_process(self.detection_process, 2)
@@ -333,21 +323,28 @@ class CaptureCore:
         self.detection_process.join()
 
         self.save_images()
+    
+    def start_live(self):
+        return
         
         
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Arducam Image Capture Core")
+    parser.add_argument("-s", "--single", type=bool, default=False, help="Capture a single frame.")
+    parser.add_argument("-l", "--live", type=bool, default=False, help="Start live commissioning.")
+    args = parser.parse_args()
+
     c = CaptureCore()
     c.init_gpio()
     c.load_config()
     logging.info("Image acquisition started.")
-    if len(sys.argv)==1:
+    if args.single:
+        c.capture_frame()
+    elif args.live:
+        c.start_live()
+    else:
         while True:
             c.start_event()
-    elif len(sys.argv)>1 and sys.argv[1]=="-s":
-        c.capture_frame()
-    else:
-        logging.error("Parameter not recognized")
-        sys.exit(1)
 
     logging.info("Program finished.")
     GPIO.cleanup()
