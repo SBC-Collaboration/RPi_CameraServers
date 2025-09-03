@@ -39,6 +39,7 @@ class CaptureCore:
         self.init_gpio()
         self.init_buffer()
         self.init_multiprocessing()
+        self.init_socket()
 
     def init_logging(self):
         self.cam_name = socket.gethostname()
@@ -89,14 +90,16 @@ class CaptureCore:
             self.frame_size = np.product(self.res)
         else:
             logging.error("Camera mode not supported!")
-        self.timestamp = mp.Array("d", np.zeros(self.config["buffer_len"]))
-        self.pts = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=np.uint64))
-        self.timediff = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=np.uint64))
-        self.skipped = mp.Array(ct.c_uint64, np.zeros(self.config["buffer_len"], dtype=int))
-        self.pixdiff = mp.Array("i", np.zeros(self.config["buffer_len"], dtype=int))
+        # if live mode, add 1 to buffer_len
+        self.buffer_len = self.config["buffer_len"]
+        self.timestamp = mp.Array("d", np.zeros(self.buffer_len))
+        self.pts = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
+        self.timediff = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=np.uint64))
+        self.skipped = mp.Array(ct.c_uint64, np.zeros(self.buffer_len, dtype=int))
+        self.pixdiff = mp.Array("i", np.zeros(self.buffer_len, dtype=int))
         self.ind = mp.Value("i", -1)
-        self.raw_arr = mp.RawArray(ct.c_uint8, self.config["buffer_len"]*self.res[0]*self.res[1])
-        self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.config["buffer_len"],*self.res])
+        self.raw_arr = mp.RawArray(ct.c_uint8, self.buffer_len*self.res[0]*self.res[1])
+        self.buffer = np.frombuffer(self.raw_arr, dtype=np.uint8).reshape([self.buffer_len,*self.res])
         logging.info("Buffer initialized.")
 
     def init_camera(self):
@@ -125,6 +128,7 @@ class CaptureCore:
         self.capture_process = mp.Process(target=self.capture_thread)
         self.detection_process = mp.Process(target=self.detection_thread)
         self.trigger_latched = mp.Value("b", False)
+        self.live_mode = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
     
     def init_socket(self):
@@ -132,18 +136,31 @@ class CaptureCore:
         port = 12345
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
+    
+    def close_socket(self):
+        self.socket.close()
 
-    def send_image(self, image):
+    def send_data(self, data, dtype="image"):
         if self.socket is None:
             self.init_socket()
 
-        # Serialize the image using struct
+        # Serialize the data using struct
         try:
-            data = struct.pack("!I", len(image)) + image
-            self.socket.sendall(data)
-            logging.info("Image sent through socket.")
+            # 4 byte type identifier
+            type_identifier = dtype.encode('utf-8')[:4].ljust(4, b'\0')
+            if dtype == "image":
+                serialized_data = data
+            elif dtype == "info":
+                serialized_data = data.to_csv(index=False).encode('utf-8')
+            else:
+                raise TypeError(f"Unsupported data type: {dtype}")
+
+            data_len = struct.pack("!I", len(serialized_data))
+            message = type_identifier + data_len + serialized_data
+            self.socket.sendall(message)
+            logging.info(f"{dtype} sent through socket.")
         except Exception as e:
-            logging.error(f"Error sending image: {e}")
+            logging.error(f"Error sending {dtype} data: {e}")
 
     def start_process(self, process, core):
         process.start()
@@ -185,7 +202,7 @@ class CaptureCore:
         self.skipped[i] = int((self.timediff[i]-2000)/10000)
         # saves image to buffer
         self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-        self.ind.value = (i+1) % self.config["buffer_len"]
+        self.ind.value = (i+1) % self.buffer_len
 
     # image capturing process
     def capture_thread(self):
@@ -195,8 +212,13 @@ class CaptureCore:
 
         # loop when trigger not latched
         while not self.trigger_latched.value:
-            self.capture(wait_for_buffer=True)
+            self.capture(wait_for_buffer= not self.live_mode.value)
             self.frame_taken.set()
+
+            if self.live_mode.value and self.ind.value==0:
+                self.save_info(to_file=False)
+                self.send_data(self.buffer[-1], "image")
+                self.load_config()
         
         self.frame_taken.set()
 
@@ -249,7 +271,7 @@ class CaptureCore:
         filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
         im.save(filename)
     
-    def save_info(self):
+    def save_info(self, to_file=True):
         logging.info("Saving info . . .")
         i = self.ind.value
 
@@ -266,7 +288,10 @@ class CaptureCore:
         self.caminfo["skipped"] = np.roll(self.caminfo["skipped"], -i)
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
         self.info_path = os.path.join(self.config["data_path"], self.cam_name+"-info.csv")
-        self.caminfo.to_csv(self.info_path, float_format="%.9f")
+        if to_file:
+            self.caminfo.to_csv(self.info_path, float_format="%.9f")
+        else:
+            return self.send_data(self.caminfo, "info")
 
     def save_images(self):
         logging.info("Saving images . . .")
@@ -289,8 +314,6 @@ class CaptureCore:
 
         self.init_buffer()
         self.init_multiprocessing()
-
-        t_overall = time.time()
 
         try:
             # start processes
@@ -321,15 +344,12 @@ class CaptureCore:
         self.save_info()
         self.save_images()
         logging.info("Saving time: %.1fs.\n"%(time.time()-t_info))
-
-    def start_live(self):
-        return
         
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Arducam Image Capture Core")
-    parser.add_argument("-s", "--single", type=bool, default=False, help="Capture a single frame.")
-    parser.add_argument("-l", "--live", type=bool, default=False, help="Start live commissioning.")
+    parser.add_argument("-s", "--single", action="store_true", help="Capture a single frame.")
+    parser.add_argument("-l", "--live", action="store_true", help="Start live commissioning.")
     args = parser.parse_args()
 
     c = CaptureCore()
@@ -339,11 +359,12 @@ if __name__ == "__main__":
     if args.single:
         c.capture_frame()
     elif args.live:
-        c.init_socket
-        c.start_live()
+        c.live_mode.value = True
+        c.start_event()
     else:
         while True:
             c.start_event()
 
     logging.info("Program finished.")
     GPIO.cleanup()
+    c.close_socket()
