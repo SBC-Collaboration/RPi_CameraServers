@@ -122,8 +122,8 @@ class CaptureCore:
         self.camera_set = mp.Event()
         self.frame_taken = mp.Event()
         self.buffer_copied = mp.Event()
-        self.capture_process = mp.Process(target=self.capture)
-        self.detection_process = mp.Process(target=self.detect_motion)
+        self.capture_process = mp.Process(target=self.capture_thread)
+        self.detection_process = mp.Process(target=self.detection_thread)
         self.trigger_latched = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
     
@@ -164,50 +164,45 @@ class CaptureCore:
         logging.info("Image captured and saved.")
         self.camera.close_camera()
         logging.info("Camera closed.")
+    
+    def capture(self, wait_for_buffer=True):
+        i = self.ind.value
+
+        # capture a frame in continuous capture
+        frame = self.camera.capture(encoding="raw", quality = 90)
+        self.timestamp[i] = time.time()
+
+        # wait for detection thread to finish copying from buffer
+        if wait_for_buffer:
+            self.buffer_copied.wait()
+            self.buffer_copied.clear()
+
+        # presentaion timestamp
+        self.pts[i] = frame.buffer_ptr[0].pts
+        # diff in pts from last frame
+        self.timediff[i] = self.pts[i] - self.pts[i-1]
+        # number of frame skipped from last frame, gives 2ms margin
+        self.skipped[i] = int((self.timediff[i]-2000)/10000)
+        # saves image to buffer
+        self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
+        self.ind.value = (i+1) % self.config["buffer_len"]
 
     # image capturing process
-    def capture(self):
+    def capture_thread(self):
         # create camera instance, and initialize
         self.init_camera()
         self.camera_set.set()
 
-        t_overall = time.time()
-
         # loop when trigger not latched
         while not self.trigger_latched.value:
-            i = self.ind.value
-
-            # capture a frame in continuous capture
-            frame = self.camera.capture(encoding="raw", quality = 90)
-            self.timestamp[i] = time.time()
-
-            # wait for detection thread to finish copying from buffer
-            self.buffer_copied.wait()
-            self.buffer_copied.clear()
-
-            # presentaion timestamp
-            self.pts[i] = frame.buffer_ptr[0].pts
-            # diff in pts from last frame
-            self.timediff[i] = self.pts[i] - self.pts[i-1]
-            # number of frame skipped from last frame, gives 2ms margin
-            self.skipped[i] = int((self.timediff[i]-2000)/10000)
-            # saves image to buffer
-            self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-            self.ind.value = (i+1) % self.config["buffer_len"]
+            self.capture(wait_for_buffer=True)
             self.frame_taken.set()
         
         self.frame_taken.set()
 
         # take remaining frames
         for j in range(self.config["post_trig"]):
-            i = self.ind.value
-            frame = self.camera.capture(encoding="raw", quality=90)
-            self.timestamp[i] = time.time()
-            self.pts[i] = frame.buffer_ptr[0].pts
-            self.timediff[i] = self.pts[i] - self.pts[i-1]
-            self.skipped[i] = int((self.timediff[i]-2000)/10000)
-            self.buffer[i] = np.ctypeslib.as_array(frame.buffer_ptr[0].data,shape=self.res)
-            self.ind.value = (i+1) % self.config["buffer_len"]
+            self.capture(wait_for_buffer=False)
         
         logging.info("Remaining frames taken.")
         # roll buffer position so the last taken image is positioned last
@@ -217,7 +212,7 @@ class CaptureCore:
         self.camera.close_camera()
         logging.info("Capture thread quitted. Camera closed.")
 
-    def detect_motion(self):
+    def detection_thread(self):
         # create two local buffer of two frames
         frame1 = np.zeros(self.res, dtype=np.uint8)
         frame2 = np.zeros(self.res, dtype=np.uint8)
@@ -253,10 +248,9 @@ class CaptureCore:
         im = Image.fromarray(self.buffer[i]).convert("L")
         filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
         im.save(filename)
-
-    def save_images(self):
-        logging.info("Saving images . . .")
-        t_overall = time.time()
+    
+    def save_info(self):
+        logging.info("Saving info . . .")
         i = self.ind.value
 
         # organize camera info to dataframe, and roll to the correct index
@@ -273,7 +267,10 @@ class CaptureCore:
         self.caminfo["pixdiff"] = np.roll(self.caminfo["pixdiff"], -i)
         self.info_path = os.path.join(self.config["data_path"], self.cam_name+"-info.csv")
         self.caminfo.to_csv(self.info_path, float_format="%.9f")
-        
+
+    def save_images(self):
+        logging.info("Saving images . . .")
+
         # reshapes image buffer and saves to disk
         self.buffer = np.reshape(self.buffer,tuple(np.array([self.config["buffer_len"], self.res[1], self.res[0]])))
         # pool = ThreadPool(4)
@@ -282,8 +279,6 @@ class CaptureCore:
             im = Image.fromarray(self.buffer[i]).convert("L")
             filename = os.path.join(self.config["data_path"], f"{self.cam_name}-img{i:02d}.{self.config['image_format']}")
             im.save(filename)
-
-        logging.info("Images saved. Time: %.0fs.\n"%(time.time()-t_overall))
 
     def start_event(self):
         GPIO.output(self.config["state_pin"], GPIO.LOW)
@@ -322,8 +317,11 @@ class CaptureCore:
         self.capture_process.join()
         self.detection_process.join()
 
+        t_info = time.time()
+        self.save_info()
         self.save_images()
-    
+        logging.info("Saving time: %.1fs.\n"%(time.time()-t_info))
+
     def start_live(self):
         return
         
@@ -341,6 +339,7 @@ if __name__ == "__main__":
     if args.single:
         c.capture_frame()
     elif args.live:
+        c.init_socket
         c.start_live()
     else:
         while True:
