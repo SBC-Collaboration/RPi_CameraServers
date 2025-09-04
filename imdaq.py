@@ -140,7 +140,7 @@ class CaptureCore:
     def close_socket(self):
         self.socket.close()
 
-    def send_data(self, data, dtype="image"):
+    def send_data(self, data, dtype="img"):
         if self.socket is None:
             self.init_socket()
 
@@ -148,9 +148,9 @@ class CaptureCore:
         try:
             # 4 byte type identifier
             type_identifier = dtype.encode('utf-8')[:4].ljust(4, b'\0')
-            if dtype == "image":
+            if type_identifier == b"img\0":
                 serialized_data = data
-            elif dtype == "info":
+            elif type_identifier == b"info":
                 serialized_data = data.to_csv(index=False).encode('utf-8')
             else:
                 raise TypeError(f"Unsupported data type: {dtype}")
@@ -217,16 +217,17 @@ class CaptureCore:
 
             if self.live_mode.value and self.ind.value==0:
                 self.save_info(to_file=False)
-                self.send_data(self.buffer[-1], "image")
+                self.send_data(self.buffer[-1], "img")
                 self.load_config()
         
         self.frame_taken.set()
 
         # take remaining frames
-        for j in range(self.config["post_trig"]):
-            self.capture(wait_for_buffer=False)
-        
-        logging.info("Remaining frames taken.")
+        if not self.live_mode.value:
+            for j in range(self.config["post_trig"]):
+                self.capture(wait_for_buffer=False)        
+            logging.info("Remaining frames taken.")
+            
         # roll buffer position so the last taken image is positioned last
         i = self.ind.value
         self.buffer[:] = np.roll(self.buffer, -i, axis=0)
@@ -309,7 +310,7 @@ class CaptureCore:
         GPIO.output(self.config["state_pin"], GPIO.LOW)
         logging.info("Waiting for event to start . . .")
 
-        while not GPIO.input(self.config["state_comm_pin"]):
+        while not self.live_mode and not GPIO.input(self.config["state_comm_pin"]):
             time.sleep(0.001)
 
         self.init_buffer()
