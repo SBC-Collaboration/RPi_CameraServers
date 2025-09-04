@@ -33,7 +33,8 @@ os.system("sudo chrt -f -p 99 " + str(pid))
 os.system("sudo taskset -cp 0 " + str(pid))
 
 class CaptureCore:
-    def __init__(self):
+    def __init__(self, live_mode=False):
+        self.live_mode = live_mode
         self.init_logging()
         self.load_config()
         self.init_gpio()
@@ -128,14 +129,15 @@ class CaptureCore:
         self.capture_process = mp.Process(target=self.capture_thread)
         self.detection_process = mp.Process(target=self.detection_thread)
         self.trigger_latched = mp.Value("b", False)
-        self.live_mode = mp.Value("b", False)
         logging.info("Multiprocessing initialized.")
     
     def init_socket(self):
+        logging.info("Initializing socket . . .")
         host = "192.168.137.3"
         port = 12345
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
+        logging.info("Socket connected.")
     
     def close_socket(self):
         self.socket.close()
@@ -145,11 +147,12 @@ class CaptureCore:
             self.init_socket()
 
         # Serialize the data using struct
+        logging.info(f"Sending {dtype} data through socket . . .")
         try:
             # 4 byte type identifier
             type_identifier = dtype.encode('utf-8')[:4].ljust(4, b'\0')
             if type_identifier == b"img\0":
-                serialized_data = data
+                serialized_data = data.tobytes()
             elif type_identifier == b"info":
                 serialized_data = data.to_csv(index=False).encode('utf-8')
             else:
@@ -212,10 +215,10 @@ class CaptureCore:
 
         # loop when trigger not latched
         while not self.trigger_latched.value:
-            self.capture(wait_for_buffer= not self.live_mode.value)
+            self.capture(wait_for_buffer= not self.live_mode)
             self.frame_taken.set()
 
-            if self.live_mode.value and self.ind.value==0:
+            if self.live_mode and self.ind.value==0:
                 self.save_info(to_file=False)
                 self.send_data(self.buffer[-1], "img")
                 self.load_config()
@@ -223,7 +226,7 @@ class CaptureCore:
         self.frame_taken.set()
 
         # take remaining frames
-        if not self.live_mode.value:
+        if not self.live_mode:
             for j in range(self.config["post_trig"]):
                 self.capture(wait_for_buffer=False)        
             logging.info("Remaining frames taken.")
@@ -353,14 +356,13 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--live", action="store_true", help="Start live commissioning.")
     args = parser.parse_args()
 
-    c = CaptureCore()
+    c = CaptureCore(args.live)
     c.init_gpio()
     c.load_config()
     logging.info("Image acquisition started.")
     if args.single:
         c.capture_frame()
     elif args.live:
-        c.live_mode.value = True
         c.start_event()
     else:
         while True:
