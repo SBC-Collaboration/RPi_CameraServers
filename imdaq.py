@@ -35,6 +35,7 @@ os.system("sudo taskset -cp 0 " + str(pid))
 class CaptureCore:
     def __init__(self, live_mode=False):
         self.live_mode = live_mode
+        self.first_frame_processed = False
         self.init_logging()
         self.load_config()
         self.init_gpio()
@@ -112,6 +113,10 @@ class CaptureCore:
             return
 
         logging.info("Camera open.")
+        self.set_camera()
+        logging.info("Camera set.")
+    
+    def set_camera(self):
         self.camera.set_resolution(*self.res)
         
         # use mode 5 or 11 for 1280x800 2lane raw8 capture
@@ -120,7 +125,6 @@ class CaptureCore:
         self.camera.set_control(v4l2.V4L2_CID_HFLIP,1)
         self.camera.set_control(v4l2.V4L2_CID_EXPOSURE,self.config["exposure"])
         self.camera.set_control(v4l2.V4L2_CID_GAIN, self.config["gain"])
-        logging.info("Camera set.")
 
     def init_multiprocessing(self):
         self.camera_set = mp.Event()
@@ -214,14 +218,20 @@ class CaptureCore:
         self.camera_set.set()
 
         # loop when trigger not latched
-        while not self.trigger_latched.value:
+        while not self.trigger_latched.value or self.live_mode:
             self.capture(wait_for_buffer= not self.live_mode)
             self.frame_taken.set()
 
             if self.live_mode and self.ind.value==0:
-                self.save_info(to_file=False)
-                self.send_data(self.buffer[-1], "img")
-                self.load_config()
+                if not self.first_frame_processed:
+                    self.first_frame_processed = True
+                else:
+                    self.save_info(to_file=False)
+                    self.send_data(self.buffer[-1], "img")
+                    # self.load_config()
+                    # self.set_camera()
+                    self.first_frame_processed = False
+                    self.ind.value = -1
         
         self.frame_taken.set()
 
